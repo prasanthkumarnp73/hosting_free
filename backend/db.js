@@ -1,8 +1,9 @@
 const fs = require('fs');
 const path = require('path');
-const initSqlJs = require('sql.js');
+const initSqlJs = require('sql.js/dist/sql-asm.js');
 
 const databasePath = process.env.VERCEL ? path.join('/tmp', 'clinicflow.db') : path.join(__dirname, 'clinicflow.db');
+fs.mkdirSync(path.dirname(databasePath), { recursive: true });
 
 function createAdapter(database) {
   const persist = () => fs.writeFileSync(databasePath, Buffer.from(database.export()));
@@ -38,7 +39,7 @@ function createAdapter(database) {
   };
 }
 
-module.exports = initSqlJs({ locateFile: (file) => require.resolve(`sql.js/dist/${file}`) }).then(SQL => {
+module.exports = initSqlJs().then(SQL => {
   const database = fs.existsSync(databasePath) ? new SQL.Database(fs.readFileSync(databasePath)) : new SQL.Database();
   const db = createAdapter(database);
   db.exec(`
