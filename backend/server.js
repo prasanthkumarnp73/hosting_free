@@ -145,8 +145,10 @@ async function sendDailyUpdate(label) {
   await notifyDoctor(`Waiting now: ${summary.waiting}\nIn consultation: ${summary.inConsultation}\nBooked today: ${summary.booked}\nCompleted: ${summary.completed}`, label);
 }
 
-cron.schedule('0 5 * * *', () => sendDailyUpdate('Good morning - opening stock'), { timezone: process.env.TIMEZONE || 'Asia/Kolkata' });
-cron.schedule('0 23 * * *', () => sendDailyUpdate('Clinic closed - daily summary'), { timezone: process.env.TIMEZONE || 'Asia/Kolkata' });
+if (require.main === module) {
+  cron.schedule('0 5 * * *', () => sendDailyUpdate('Good morning - opening stock'), { timezone: process.env.TIMEZONE || 'Asia/Kolkata' });
+  cron.schedule('0 23 * * *', () => sendDailyUpdate('Clinic closed - daily summary'), { timezone: process.env.TIMEZONE || 'Asia/Kolkata' });
+}
 
 app.get('/{*splat}', (_req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'index.html')));
 

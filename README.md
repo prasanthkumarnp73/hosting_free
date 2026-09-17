@@ -37,6 +37,6 @@ For production, configure Meta’s webhook callback to `https://your-domain/webh
 
 ## Deploy to Vercel
 
-The repository includes `vercel.json` and exports the Express app as a Vercel serverless function. Import the GitHub repository into Vercel with the project root set to the repository root, leave the framework preset as `Other`, and deploy. Add the WhatsApp and clinic environment variables in Vercel Project Settings before enabling live messaging.
+The repository includes `vercel.json` and `api/index.js`; Vercel uses that file as the serverless entrypoint. Import the GitHub repository into Vercel with the project root set to the repository root, leave the framework preset as `Other`, and deploy. Add the WhatsApp and clinic environment variables in Vercel Project Settings before enabling live messaging.
 
 SQLite on Vercel uses temporary `/tmp` storage and can reset between deployments or serverless instances. Use PostgreSQL or another hosted database for production data persistence.
