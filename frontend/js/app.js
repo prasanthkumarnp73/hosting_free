@@ -1,10 +1,29 @@
 const json = { headers: { 'Content-Type': 'application/json' } };
 const api = async (url, options = {}) => { const response = await fetch(url, options); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Something went wrong'); return data; };
 
+const phonePattern = /^(?:[0-9]{10}|\+91[0-9]{10})$/;
+const phoneInput = document.querySelector('#phone-input');
+if (phoneInput) {
+  phoneInput.addEventListener('input', () => {
+    const startsWithCountryCode = phoneInput.value.startsWith('+');
+    phoneInput.value = startsWithCountryCode
+      ? `+${phoneInput.value.slice(1).replace(/\D/g, '').slice(0, 12)}`
+      : phoneInput.value.replace(/\D/g, '').slice(0, 10);
+    phoneInput.setCustomValidity(phonePattern.test(phoneInput.value) ? '' : 'Enter 10 digits or +91 followed by 10 digits.');
+  });
+}
+
 const registrationForm = document.querySelector('#registration-form');
 if (registrationForm) {
   registrationForm.addEventListener('submit', async (event) => {
     event.preventDefault();
+    const submittedPhone = registrationForm.elements.phone.value;
+    if (!phonePattern.test(submittedPhone)) {
+      registrationForm.elements.phone.setCustomValidity('Enter 10 digits or +91 followed by 10 digits.');
+      registrationForm.elements.phone.reportValidity();
+      return;
+    }
+    registrationForm.elements.phone.setCustomValidity('');
     const button = registrationForm.querySelector('button'); button.disabled = true; button.textContent = 'Joining queue…';
     try {
       const patient = await api('/register', { method: 'POST', headers: json.headers, body: JSON.stringify(Object.fromEntries(new FormData(registrationForm))) });

@@ -24,6 +24,8 @@ const today = () => {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 };
 const timeNow = () => new Date().toISOString();
+const phonePattern = /^(?:[0-9]{10}|\+91[0-9]{10})$/;
+const normalizePhone = phone => phone.startsWith('+91') ? phone : `+91${phone}`;
 
 async function getSummary() {
   const date = today();
@@ -55,10 +57,13 @@ app.get('/api/queue', async (_req, res) => res.json(await getQueue()));
 app.post('/register', async (req, res) => {
   const { name, phone, language = 'en', notes = '' } = req.body;
   if (!name?.trim() || !phone?.trim()) return res.status(400).json({ error: 'Name and phone number are required.' });
+  const enteredPhone = phone.trim();
+  if (!phonePattern.test(enteredPhone)) return res.status(400).json({ error: 'WhatsApp number must be 10 digits or +91 followed by 10 digits.' });
+  const normalizedPhone = normalizePhone(enteredPhone);
 
   const token = (await db.prepare("SELECT COALESCE(MAX(token), 0) + 1 AS nextToken FROM patients WHERE created_at::date = ?").get(today())).nexttoken;
   const checkedInAt = timeNow();
-  const result = await db.prepare('INSERT INTO patients (name, phone, language, notes, token, created_at, checked_in_at, queue_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id').run(name.trim(), phone.trim(), language, notes.trim(), token, checkedInAt, checkedInAt, token);
+  const result = await db.prepare('INSERT INTO patients (name, phone, language, notes, token, created_at, checked_in_at, queue_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id').run(name.trim(), normalizedPhone, language, notes.trim(), token, checkedInAt, checkedInAt, token);
   const patient = await db.prepare('SELECT id, name, phone, language, notes, token, status, created_at AS "createdAt", checked_in_at AS "checkedInAt" FROM patients WHERE id = ?').get(result.lastInsertRowid);
   const appointmentResult = await db.prepare('INSERT INTO appointments (patient_id, date, doctor_id, status) VALUES (?, ?, 1, ?) RETURNING id').run(patient.id, today(), 'checked_in');
   await recordHistory(patient.id, appointmentResult.lastInsertRowid, null, 'checked_in', 'Patient registered and checked in');
