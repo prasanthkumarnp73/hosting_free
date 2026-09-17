@@ -1,12 +1,13 @@
 # ClinicFlow
 
-ClinicFlow is a small clinic operations app for walk-in registration, patient tokens, reception queue management, and doctor visibility. It runs as a single Node.js/Express service with SQLite for local development.
+ClinicFlow is a small clinic operations app for walk-in registration, patient tokens, reception queue management, and doctor visibility. It runs as a Node.js/Express service backed by PostgreSQL.
 
 ## Run locally
 
-1. Install Node.js 18+.
-2. Copy `.env.example` to `.env` and adjust values if needed.
-3. Install dependencies and start the server:
+1. Install Node.js 18+ and PostgreSQL 14+.
+2. Create a database named `clinicflow`.
+3. Copy `.env.example` to `.env` and set `DATABASE_URL`.
+4. Install dependencies and start the server:
 
 ```bash
 npm install
@@ -25,7 +26,9 @@ Open `http://localhost:3000` for patient registration. Staff views are available
 - `GET /api/qr` returns a QR data URL for the clinic URL.
 - `POST /api/whatsapp/webhook` handles the doctor’s “current patient details” query.
 
-The SQLite schema creates `patients`, `appointments`, and `doctors` automatically in `backend/clinicflow.db`. The schema uses SQLite-compatible SQL and can be migrated to PostgreSQL or MySQL later.
+The PostgreSQL schema creates `patients`, `appointments`, `appointment_history`, and `doctors` automatically on startup. No manual migration command is required for a fresh database.
+
+For a free hosted database, create a PostgreSQL database with Neon or Supabase and copy its connection string into `DATABASE_URL`. Hosted providers normally require `DATABASE_SSL=true` (the default). Keep the connection string private and never commit `.env`.
 
 ## WhatsApp Business Cloud API
 
@@ -35,8 +38,55 @@ For real delivery, the submitted patient phone must be in international E.164 fo
 
 For production, configure Meta’s webhook callback to `https://your-domain/webhook`, use a persistent database, add authentication to staff dashboards, and serve behind HTTPS. Generate a physical entrance QR from `/api/qr` or use the QR image shown in the doctor dashboard.
 
+## Deploy to Render
+
+For this Express application, Render is the recommended deployment platform:
+
+1. Create a PostgreSQL database on Neon, Supabase, or Render.
+2. Create a Render Web Service connected to this repository.
+3. Set the build command to `npm install`.
+4. Set the start command to `npm start`.
+5. Add `DATABASE_URL`, `DATABASE_SSL=true`, `CLINIC_URL`, `TIMEZONE`, and WhatsApp variables in Render Environment.
+6. Deploy and open the service URL.
+
+The patient, receptionist, and doctor pages use the same deployed service:
+
+```text
+https://your-service.onrender.com/
+https://your-service.onrender.com/receptionist.html
+https://your-service.onrender.com/doctor.html
+```
+
+For the current deployed service, use these URLs:
+
+```text
+Patient:      https://view-clinic.onrender.com/
+Receptionist: https://view-clinic.onrender.com/receptionist.html
+Doctor:       https://view-clinic.onrender.com/doctor.html
+```
+
+These are all the same Render web service. Do not use `https://view-clinic.onrender.com` as `DATABASE_URL`; it is an HTTP website URL, not a PostgreSQL connection string.
+
+To connect PostgreSQL on Render:
+
+1. Open Render Dashboard and choose **New + > PostgreSQL**.
+2. Create a database, for example `clinicflow-db`.
+3. Open the database after it is ready and copy its **Internal Database URL** if the database and web service are both on Render. Use the **External Database URL** only when connecting from your local computer.
+4. Open the `view-clinic` web service, choose **Environment**, and add:
+
+```text
+DATABASE_URL=<the PostgreSQL URL copied from Render>
+DATABASE_SSL=true
+CLINIC_URL=https://view-clinic.onrender.com
+TIMEZONE=Asia/Kolkata
+```
+
+5. Save changes and choose **Redeploy latest commit**. The app creates the PostgreSQL tables automatically during startup.
+
+Never commit the real `DATABASE_URL` or share it in chat. Only add it in Render Environment Variables or your local untracked `.env` file.
+
 ## Deploy to Vercel
 
 The repository includes `vercel.json` and `api/index.js`; Vercel uses that file as the serverless entrypoint. The Vercel build uses sql.js asm.js, which does not require a separate WebAssembly asset. Import the GitHub repository into Vercel with the project root set to the repository root, leave the framework preset as `Other`, and deploy. Add the WhatsApp and clinic environment variables in Vercel Project Settings before enabling live messaging.
 
-SQLite on Vercel uses temporary `/tmp` storage and can reset between deployments or serverless instances. Use PostgreSQL or another hosted database for production data persistence.
+Set `DATABASE_URL` and `DATABASE_SSL=true` in Vercel Environment Variables. PostgreSQL is required for persistent data; the old SQLite implementation is no longer used.
