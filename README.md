@@ -65,6 +65,15 @@ Receptionist: https://view-clinic.onrender.com/receptionist.html
 Doctor:       https://view-clinic.onrender.com/doctor.html
 ```
 
+The entrance QR should contain only the patient URL: `https://view-clinic.onrender.com/`. Open `https://view-clinic.onrender.com/qr.html` after setting `CLINIC_URL` in Render to view and print a fresh QR code. Test it with two different phones before putting it at the entrance.
+
+Recommended placement:
+
+- Main entrance or reception desk, at eye level, with good lighting.
+- A second copy near the waiting-area sign for patients who miss the first one.
+- Print at least 10 cm by 10 cm with the text “Scan to join the clinic queue” below it.
+- Keep the QR on a flat, clean, non-reflective surface and leave clear space around its edges.
+
 These are all the same Render web service. Do not use `https://view-clinic.onrender.com` as `DATABASE_URL`; it is an HTTP website URL, not a PostgreSQL connection string.
 
 To connect PostgreSQL on Render:

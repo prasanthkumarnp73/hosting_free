@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ClinicFlow QR code</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .qr-print-page { min-height: 100vh; display: grid; place-items: center; padding: 32px; }
+    .qr-print-card { max-width: 440px; padding: 42px; background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); text-align: center; }
+    .qr-print-card img { width: min(320px, 100%); height: auto; margin: 14px auto 20px; }
+    .qr-print-card h1 { margin: 0; font: 500 38px/1.05 Fraunces, serif; }
+    .qr-print-card p { color: var(--muted); line-height: 1.5; }
+    .qr-url { color: var(--green); font-size: 12px; word-break: break-all; }
+    .print-button { width: auto; justify-content: center; margin: 20px auto 0; }
+    @media print { .topbar, .print-button { display: none; } .qr-print-page { padding: 0; } .qr-print-card { border: 0; box-shadow: none; } }
+  </style>
+</head>
+<body class="patient-page">
+  <header class="topbar"><a class="brand" href="/"><span class="brand-mark">+</span><span>Clinic<span>Flow</span></span></a><a href="/doctor.html">Doctor view</a></header>
+  <main class="qr-print-page">
+    <section class="qr-print-card"><p class="eyebrow">PATIENT ENTRANCE</p><h1>Join the clinic queue</h1><img id="clinic-qr" alt="Scan to open ClinicFlow patient registration"><p>Scan this code with your phone camera to register and receive your token.</p><p id="qr-url" class="qr-url">Loading clinic URL…</p><button class="primary-button print-button" type="button" onclick="window.print()">Print QR code</button></section>
+  </main>
+  <script>
+    fetch('/api/qr').then(response => response.json()).then(data => { document.querySelector('#clinic-qr').src = data.dataUrl; document.querySelector('#qr-url').textContent = data.url; }).catch(() => { document.querySelector('#qr-url').textContent = 'QR service unavailable'; });
+  </script>
+</body>
+</html>
