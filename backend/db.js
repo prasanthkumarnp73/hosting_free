@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const initSqlJs = require('sql.js');
 
-const databasePath = path.join(__dirname, 'clinicflow.db');
+const databasePath = process.env.VERCEL ? path.join('/tmp', 'clinicflow.db') : path.join(__dirname, 'clinicflow.db');
 
 function createAdapter(database) {
   const persist = () => fs.writeFileSync(databasePath, Buffer.from(database.export()));

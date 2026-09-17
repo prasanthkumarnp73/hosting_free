@@ -11,6 +11,13 @@ const port = process.env.PORT || 3000;
 const clinicUrl = process.env.CLINIC_URL || `http://localhost:${port}`;
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'frontend')));
+const databaseReady = require('./db').then(database => {
+  db = database;
+  return database;
+});
+app.use(async (_req, _res, next) => {
+  try { await databaseReady; next(); } catch (error) { next(error); }
+});
 
 const today = () => {
   const now = new Date();
@@ -142,10 +149,14 @@ cron.schedule('0 5 * * *', () => sendDailyUpdate('Good morning - opening stock')
 cron.schedule('0 23 * * *', () => sendDailyUpdate('Clinic closed - daily summary'), { timezone: process.env.TIMEZONE || 'Asia/Kolkata' });
 
 app.get('/{*splat}', (_req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'index.html')));
-require('./db').then(database => {
-  db = database;
-  app.listen(port, () => console.log(`ClinicFlow running at ${clinicUrl} (${isConfigured() ? 'WhatsApp live' : 'WhatsApp demo mode'})`));
-}).catch(error => {
-  console.error('Could not initialize SQLite database:', error);
-  process.exitCode = 1;
-});
+
+if (require.main === module) {
+  databaseReady.then(() => {
+    app.listen(port, () => console.log(`ClinicFlow running at ${clinicUrl} (${isConfigured() ? 'WhatsApp live' : 'WhatsApp demo mode'})`));
+  }).catch(error => {
+    console.error('Could not initialize SQLite database:', error);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = app;

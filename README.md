@@ -34,3 +34,9 @@ Add `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `DOCTOR_WHATSAPP_NUMBER
 For real delivery, the submitted patient phone must be in international E.164 format, such as `919900112233`, and the Meta WhatsApp sender must be configured and approved. The local demo mode proves the message content but cannot deliver to a real phone.
 
 For production, configure Meta’s webhook callback to `https://your-domain/webhook`, use a persistent database, add authentication to staff dashboards, and serve behind HTTPS. Generate a physical entrance QR from `/api/qr` or use the QR image shown in the doctor dashboard.
+
+## Deploy to Vercel
+
+The repository includes `vercel.json` and exports the Express app as a Vercel serverless function. Import the GitHub repository into Vercel with the project root set to the repository root, leave the framework preset as `Other`, and deploy. Add the WhatsApp and clinic environment variables in Vercel Project Settings before enabling live messaging.
+
+SQLite on Vercel uses temporary `/tmp` storage and can reset between deployments or serverless instances. Use PostgreSQL or another hosted database for production data persistence.
