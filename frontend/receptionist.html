@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reception | ClinicFlow</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="dashboard-page">
+  <header class="topbar">
+    <a class="brand" href="/"><span class="brand-mark">+</span><span>Clinic<span>Flow</span></span></a>
+    <nav><a class="active" href="/receptionist.html">Reception</a><a href="/doctor.html">Doctor view</a></nav>
+    <span class="avatar">RC</span>
+  </header>
+  <main class="dashboard-shell">
+    <div class="page-intro">
+      <div><p class="eyebrow">THURSDAY, 17 SEPTEMBER 2026</p><h1>Good morning, Riya.</h1><p class="muted">Here’s the queue at Riverside Family Clinic.</p></div>
+      <div class="reception-actions">
+        <div class="current-token"><span>NOW SERVING</span><strong id="current-token">—</strong><small id="current-patient">No consultation in progress</small></div>
+        <button id="call-next" class="primary-button compact" disabled>Call next patient <span>→</span></button>
+      </div>
+    </div>
+    <section class="metric-grid">
+      <div class="metric-card accent"><span>WAITING NOW</span><strong id="waiting-count">—</strong><small>patients in queue</small></div>
+      <div class="metric-card"><span>IN CONSULTATION</span><strong id="consulting-count">—</strong><small>with the doctor</small></div>
+      <div class="metric-card"><span>COMPLETED TODAY</span><strong id="completed-count">—</strong><small>visits closed</small></div>
+    </section>
+    <section class="table-section">
+      <div class="section-heading"><div><p class="eyebrow">LIVE QUEUE</p><h2>Patients today</h2></div><span id="last-updated" class="muted">Updating…</span></div>
+      <div class="table-wrap"><table><thead><tr><th>Token</th><th>Patient</th><th>Visit</th><th>Checked in</th><th>Status</th><th>Queue action</th></tr></thead><tbody id="queue-body"></tbody></table></div>
+    </section>
+  </main>
+  <script src="/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Doctor view | ClinicFlow</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="dashboard-page doctor-view">
+  <header class="topbar">
+    <a class="brand" href="/"><span class="brand-mark">+</span><span>Clinic<span>Flow</span></span></a>
+    <nav><a href="/receptionist.html">Reception</a><a class="active" href="/doctor.html">Doctor view</a></nav>
+    <span class="avatar doctor-avatar">DR</span>
+  </header>
+  <main class="dashboard-shell">
+    <div class="page-intro">
+      <div><p class="eyebrow">DOCTOR DASHBOARD · LIVE</p><h1>Good morning, Dr. Rao.</h1><p class="muted">A quiet view of today’s clinic rhythm.</p></div>
+      <div class="availability"><i></i> Available for consultation</div>
+    </div>
+    <section class="doctor-layout">
+      <div class="main-column">
+        <section class="now-card">
+          <div><p class="eyebrow">RIGHT NOW</p><h2><span id="doctor-waiting">—</span> patients waiting</h2><p class="muted">Now serving <strong id="doctor-current-token">—</strong> · <span id="doctor-current-patient">Waiting for reception</span></p></div>
+          <div class="pulse-ring"><span id="doctor-total">—</span><small>total<br>today</small></div>
+        </section>
+        <section class="table-section">
+          <div class="section-heading"><div><p class="eyebrow">TODAY'S VISITS</p><h2>Patient activity</h2></div><span class="live-label"><i></i> Live updates</span></div>
+          <div class="activity-list" id="activity-list"></div>
+        </section>
+      </div>
+      <aside class="side-column">
+        <div class="side-panel"><p class="eyebrow">DAY AT A GLANCE</p><div class="side-stat"><span>Booked before arrival</span><strong id="booked-count">—</strong></div><div class="side-stat"><span>Completed consultations</span><strong id="doctor-completed">—</strong></div><div class="side-stat"><span>Clinic hours</span><strong>09:00–18:00</strong></div></div>
+        <div class="side-panel whatsapp-panel"><span class="wa-icon">◌</span><p class="eyebrow">WHATSAPP UPDATES</p><h3>Briefings are on autopilot.</h3><p class="muted">Opening stock at 5 AM and closing summary at 11 PM.</p><span class="configured">● Connected in demo mode</span></div>
+        <div class="side-panel qr-panel"><div><p class="eyebrow">PATIENT QR</p><h3>Invite the next patient</h3><p class="muted">Print this code for your entrance.</p></div><img id="qr-image" alt="Clinic registration QR code"></div>
+      </aside>
+    </section>
+  </main>
+  <script src="/js/app.js"></script>
+</body>
+</html>
