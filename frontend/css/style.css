@@ -211,11 +211,11 @@ td:first-child { color: var(--orange); font-weight: 700; }
   line-height: 1.18;
   letter-spacing: -1.3px;
 }
-.patient-page label { color: #647970; font-family: 'Poppins', sans-serif; font-size: 11px; letter-spacing: .15px; }
+.patient-page label { color: #1d3027; font-family: 'Poppins', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: .05px; }
 .patient-page input,
 .patient-page select {
   margin-top: 9px;
-  padding: 14px 15px;
+  padding: 16px 15px;
   border: 1px solid #dce9e2;
   border-radius: 11px;
   background: rgba(247, 251, 249, .9);
@@ -223,6 +223,7 @@ td:first-child { color: var(--orange); font-weight: 700; }
   font-family: 'Poppins', sans-serif;
   transition: border-color .2s, box-shadow .2s, background .2s;
 }
+.patient-page input[readonly] { color: #466057; background: #edf5f0; cursor: default; }
 .patient-page input:focus,
 .patient-page select:focus {
   border-color: #4aa778;
@@ -233,11 +234,12 @@ td:first-child { color: var(--orange); font-weight: 700; }
   position: relative;
   overflow: hidden;
   margin-top: 7px;
-  padding: 17px 20px;
+  padding: 18px 20px;
   border-radius: 12px;
   background: linear-gradient(110deg, #155b43, #2e9c6b 52%, #62c590);
   box-shadow: 0 10px 22px rgba(43, 122, 85, .26), inset 0 1px 0 rgba(255, 255, 255, .32);
   font-family: 'Poppins', sans-serif;
+  font-size: 16px;
   letter-spacing: .1px;
 }
 .patient-page .primary-button::before {

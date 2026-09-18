@@ -13,6 +13,25 @@ if (phoneInput) {
   });
 }
 
+const dateOfBirthInput = document.querySelector('#date-of-birth');
+const ageInput = document.querySelector('#age');
+if (dateOfBirthInput && ageInput) {
+  dateOfBirthInput.max = new Date().toISOString().split('T')[0];
+  dateOfBirthInput.addEventListener('input', () => {
+    if (!dateOfBirthInput.value) {
+      ageInput.value = '';
+      return;
+    }
+    const birthDate = new Date(`${dateOfBirthInput.value}T00:00:00`);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const birthdayHasPassed = today.getMonth() > birthDate.getMonth()
+      || (today.getMonth() === birthDate.getMonth() && today.getDate() >= birthDate.getDate());
+    if (!birthdayHasPassed) age -= 1;
+    ageInput.value = age >= 0 ? `${age} years` : '';
+  });
+}
+
 const registrationForm = document.querySelector('#registration-form');
 if (registrationForm) {
   registrationForm.addEventListener('submit', async (event) => {
@@ -28,7 +47,7 @@ if (registrationForm) {
     try {
       const patient = await api('/register', { method: 'POST', headers: json.headers, body: JSON.stringify(Object.fromEntries(new FormData(registrationForm))) });
       const formData = Object.fromEntries(new FormData(registrationForm));
-      const languageNames = { en: 'English', hi: 'हिन्दी', mr: 'मराठी', ta: 'தமிழ்' };
+      const languageNames = { en: 'English', hi: 'Hindi', te: 'Telugu', kn: 'Kannada' };
       registrationForm.classList.add('hidden'); document.querySelector('#confirmation').classList.remove('hidden');
       document.querySelector('#token-number').textContent = `#${patient.patient.token}`;
       document.querySelector('#confirmed-phone').textContent = patient.patient.phone;
