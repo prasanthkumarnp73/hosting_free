@@ -69,6 +69,12 @@ const queueStatus = async (req, res) => {
 };
 app.get('/queue/status', queueStatus);
 app.get('/api/queue/status', queueStatus);
+const currentQueue = async (_req, res) => {
+  const current = await db.prepare("SELECT token FROM patients WHERE status = 'called' AND created_at::date = ? ORDER BY called_at DESC LIMIT 1").get(today());
+  res.json({ current_token: current?.token || null });
+};
+app.get('/queue/current', currentQueue);
+app.get('/api/queue/current', currentQueue);
 
 app.post('/register', async (req, res) => {
   const { name, phone, language = 'en', notes = '' } = req.body;

@@ -34,16 +34,54 @@ if (dateOfBirthInput && ageInput) {
 
 const registrationForm = document.querySelector('#registration-form');
 let queueStatusTimer;
+let publicQueueTimer;
+const tokenStorageKey = 'patientToken';
+const confirmation = document.querySelector('#confirmation');
+const publicCurrentToken = document.querySelector('#public-current-token');
+
+async function updatePublicQueue() {
+  if (!publicCurrentToken) return;
+  try {
+    const status = await api('/queue/current');
+    publicCurrentToken.textContent = status.current_token ? `#${status.current_token}` : '—';
+  } catch (_error) {
+    // Keep the last known public queue value visible during a temporary network failure.
+  }
+}
+
 async function updateQueueStatus(token) {
   try {
     const status = await api(`/queue/status?token=${encodeURIComponent(token)}`);
     document.querySelector('#live-current-token').textContent = status.current_token ? `#${status.current_token}` : '—';
     document.querySelector('#live-patients-ahead').textContent = status.patient_position;
     document.querySelector('#queue-intimation').classList.toggle('hidden', status.patient_position !== 1);
-  } catch (_error) {
-    // Keep the last known queue state visible during a temporary network failure.
+  } catch (error) {
+    if (error.message === 'Token not found for today.') {
+      localStorage.removeItem(tokenStorageKey);
+      window.location.reload();
+    }
   }
 }
+
+function showPatientQueue(token) {
+  if (!registrationForm || !confirmation) return;
+  registrationForm.classList.add('hidden');
+  confirmation.classList.remove('hidden');
+  document.querySelector('#token-number').textContent = `#${token}`;
+  document.querySelector('#live-your-token').textContent = `#${token}`;
+  updateQueueStatus(token);
+  window.clearInterval(queueStatusTimer);
+  queueStatusTimer = window.setInterval(() => updateQueueStatus(token), 7000);
+}
+
+if (publicCurrentToken) {
+  updatePublicQueue();
+  publicQueueTimer = window.setInterval(updatePublicQueue, 7000);
+}
+
+const storedToken = localStorage.getItem(tokenStorageKey);
+if (storedToken && registrationForm) showPatientQueue(storedToken);
+
 if (registrationForm) {
   registrationForm.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -66,12 +104,14 @@ if (registrationForm) {
       document.querySelector('#confirmed-number').textContent = patient.patient.phone;
       document.querySelector('#confirmed-visit').textContent = patient.patient.notes || formData.notes;
       document.querySelector('#confirmed-language').textContent = languageNames[patient.patient.language] || patient.patient.language;
-      document.querySelector('#live-your-token').textContent = `#${patient.patient.token}`;
-      await updateQueueStatus(patient.patient.token);
-      queueStatusTimer = window.setInterval(() => updateQueueStatus(patient.patient.token), 7000);
+      localStorage.setItem(tokenStorageKey, String(patient.patient.token));
+      showPatientQueue(patient.patient.token);
     } catch (error) { alert(error.message); button.disabled = false; button.innerHTML = 'Get my token <span>→</span>'; }
   });
 }
+
+const registerAnother = document.querySelector('#register-another');
+if (registerAnother) registerAnother.addEventListener('click', () => localStorage.removeItem(tokenStorageKey));
 
 async function refreshDashboard() {
   const queue = await api('/api/queue'); const summary = await api('/api/summary');
