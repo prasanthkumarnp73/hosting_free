@@ -258,6 +258,21 @@ td:first-child { color: var(--orange); font-weight: 700; }
 .patient-page .primary-button span { position: relative; }
 .patient-page .field-help { padding-left: 3px; }
 .patient-page footer { font-family: 'Poppins', sans-serif; }
+.patient-page .queue-live {
+  margin-top: 26px;
+  padding: 20px;
+  border: 1px solid rgba(43, 122, 85, .16);
+  border-radius: 16px;
+  background: linear-gradient(145deg, #f4fbf6, #edf7f7);
+  text-align: left;
+}
+.patient-page .queue-live-title { margin: 0 0 15px; color: var(--green); font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+.patient-page .queue-live-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.patient-page .queue-live-grid div { padding: 13px; border-radius: 11px; background: rgba(255, 255, 255, .75); box-shadow: 0 4px 12px rgba(43, 122, 85, .06); }
+.patient-page .queue-live-grid span { display: block; color: #557066; font-size: 10px; font-weight: 700; line-height: 1.35; text-transform: uppercase; }
+.patient-page .queue-live-grid strong { display: block; margin-top: 7px; color: #164d38; font-size: 22px; font-weight: 700; }
+.patient-page .queue-intimation { margin: 16px 0 0; padding: 13px 15px; border: 1px solid #f0c95a; border-radius: 10px; background: #fff6d7; color: #765400; font-size: 13px; font-weight: 700; line-height: 1.45; animation: queue-pulse 1.8s ease-in-out infinite; }
+@keyframes queue-pulse { 50% { box-shadow: 0 0 0 5px rgba(240, 201, 90, .16); } }
 
 @media (max-width: 480px) {
   .patient-page .topbar { height: 76px; padding: 0 18px; }
@@ -266,4 +281,5 @@ td:first-child { color: var(--orange); font-weight: 700; }
   .patient-page .patient-shell { padding: 34px 16px; }
   .patient-page .form-card { padding: 26px 20px; border-radius: 18px; }
   .patient-page .card-heading h2 { font-size: 28px; }
+  .patient-page .queue-live-grid { grid-template-columns: 1fr; }
 }

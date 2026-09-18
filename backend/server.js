@@ -53,6 +53,22 @@ async function recordHistory(patientId, appointmentId, fromStatus, toStatus, rea
 
 app.get('/api/summary', async (_req, res) => res.json(await getSummary()));
 app.get('/api/queue', async (_req, res) => res.json(await getQueue()));
+const queueStatus = async (req, res) => {
+  const token = Number.parseInt(req.query.token, 10);
+  if (!Number.isInteger(token) || token < 1) return res.status(400).json({ error: 'A valid token is required.' });
+
+  const date = today();
+  const patient = await db.prepare('SELECT token, status, queue_order AS queueOrder FROM patients WHERE token = ? AND created_at::date = ?').get(token, date);
+  if (!patient) return res.status(404).json({ error: 'Token not found for today.' });
+  const current = await db.prepare("SELECT token FROM patients WHERE status = 'called' AND created_at::date = ? ORDER BY called_at DESC LIMIT 1").get(date);
+  const ahead = patient.status === 'waiting'
+    ? await db.prepare("SELECT COUNT(*)::int AS count FROM patients WHERE status = 'waiting' AND created_at::date = ? AND (queue_order < ? OR (queue_order = ? AND token < ?))").get(date, patient.queueOrder, patient.queueOrder, patient.token)
+    : { count: 0 };
+
+  res.json({ current_token: current?.token || null, patient_position: ahead.count, patients_ahead: ahead.count });
+};
+app.get('/queue/status', queueStatus);
+app.get('/api/queue/status', queueStatus);
 
 app.post('/register', async (req, res) => {
   const { name, phone, language = 'en', notes = '' } = req.body;
