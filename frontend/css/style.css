@@ -7,7 +7,7 @@
   --paper: #f5f7f3;
   --white: #ffffff;
   --mint: #d8f0dc;
-  --green: #2b7a55;
+  --green: hwb(0 2% 40%);
   --orange: #e88052;
   --yellow: #f4c95d;
   --shadow: 0 20px 60px rgba(38, 57, 44, 0.08);
