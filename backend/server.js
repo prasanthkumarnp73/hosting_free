@@ -58,14 +58,25 @@ const queueStatus = async (req, res) => {
   if (!Number.isInteger(token) || token < 1) return res.status(400).json({ error: 'A valid token is required.' });
 
   const date = today();
-  const patient = await db.prepare('SELECT token, status, queue_order AS queueOrder FROM patients WHERE token = ? AND created_at::date = ?').get(token, date);
+  const patient = await db.prepare('SELECT name, phone AS whatsapp, language, notes AS "visitType", token, status, queue_order AS queueOrder FROM patients WHERE token = ? AND created_at::date = ?').get(token, date);
   if (!patient) return res.status(404).json({ error: 'Token not found for today.' });
   const current = await db.prepare("SELECT token FROM patients WHERE status = 'called' AND created_at::date = ? ORDER BY called_at DESC LIMIT 1").get(date);
   const ahead = patient.status === 'waiting'
     ? await db.prepare("SELECT COUNT(*)::int AS count FROM patients WHERE status = 'waiting' AND created_at::date = ? AND (queue_order < ? OR (queue_order = ? AND token < ?))").get(date, patient.queueOrder, patient.queueOrder, patient.token)
     : { count: 0 };
 
-  res.json({ current_token: current?.token || null, patient_position: ahead.count, patients_ahead: ahead.count });
+  res.json({
+    patient_details: {
+      name: patient.name,
+      whatsapp: patient.whatsapp,
+      language: patient.language,
+      visitType: patient.visitType,
+      token: patient.token
+    },
+    current_token: current?.token || null,
+    patient_position: ahead.count,
+    patients_ahead: ahead.count
+  });
 };
 app.get('/queue/status', queueStatus);
 app.get('/api/queue/status', queueStatus);

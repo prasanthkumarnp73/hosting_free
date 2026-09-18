@@ -35,7 +35,7 @@ if (dateOfBirthInput && ageInput) {
 const registrationForm = document.querySelector('#registration-form');
 let queueStatusTimer;
 let publicQueueTimer;
-const tokenStorageKey = 'patientToken';
+const patientDetailsStorageKey = 'patientDetails';
 const confirmation = document.querySelector('#confirmation');
 const publicCurrentToken = document.querySelector('#public-current-token');
 
@@ -52,26 +52,40 @@ async function updatePublicQueue() {
 async function updateQueueStatus(token) {
   try {
     const status = await api(`/queue/status?token=${encodeURIComponent(token)}`);
+    if (status.patient_details) {
+      localStorage.setItem(patientDetailsStorageKey, JSON.stringify(status.patient_details));
+      renderPatientDetails(status.patient_details);
+    }
     document.querySelector('#live-current-token').textContent = status.current_token ? `#${status.current_token}` : '—';
     document.querySelector('#live-patients-ahead').textContent = status.patient_position;
     document.querySelector('#queue-intimation').classList.toggle('hidden', status.patient_position !== 1);
   } catch (error) {
     if (error.message === 'Token not found for today.') {
-      localStorage.removeItem(tokenStorageKey);
+      localStorage.removeItem(patientDetailsStorageKey);
       window.location.reload();
     }
   }
 }
 
-function showPatientQueue(token) {
+function renderPatientDetails(details) {
+  const languageNames = { en: 'English', hi: 'Hindi', te: 'Telugu', kn: 'Kannada' };
+  document.querySelector('#token-number').textContent = `#${details.token}`;
+  document.querySelector('#live-your-token').textContent = `#${details.token}`;
+  document.querySelector('#confirmed-name').textContent = details.name || '—';
+  document.querySelector('#confirmed-phone').textContent = details.whatsapp || '—';
+  document.querySelector('#confirmed-number').textContent = details.whatsapp || '—';
+  document.querySelector('#confirmed-visit').textContent = details.visitType || 'General consultation';
+  document.querySelector('#confirmed-language').textContent = languageNames[details.language] || details.language || '—';
+}
+
+function showPatientQueue(details) {
   if (!registrationForm || !confirmation) return;
   registrationForm.classList.add('hidden');
   confirmation.classList.remove('hidden');
-  document.querySelector('#token-number').textContent = `#${token}`;
-  document.querySelector('#live-your-token').textContent = `#${token}`;
-  updateQueueStatus(token);
+  renderPatientDetails(details);
+  updateQueueStatus(details.token);
   window.clearInterval(queueStatusTimer);
-  queueStatusTimer = window.setInterval(() => updateQueueStatus(token), 7000);
+  queueStatusTimer = window.setInterval(() => updateQueueStatus(details.token), 7000);
 }
 
 if (publicCurrentToken) {
@@ -79,8 +93,16 @@ if (publicCurrentToken) {
   publicQueueTimer = window.setInterval(updatePublicQueue, 7000);
 }
 
-const storedToken = localStorage.getItem(tokenStorageKey);
-if (storedToken && registrationForm) showPatientQueue(storedToken);
+const storedPatientDetails = localStorage.getItem(patientDetailsStorageKey);
+if (storedPatientDetails && registrationForm) {
+  try {
+    const details = JSON.parse(storedPatientDetails);
+    if (details?.token) showPatientQueue(details);
+    else localStorage.removeItem(patientDetailsStorageKey);
+  } catch (_error) {
+    localStorage.removeItem(patientDetailsStorageKey);
+  }
+}
 
 if (registrationForm) {
   registrationForm.addEventListener('submit', async (event) => {
@@ -96,22 +118,21 @@ if (registrationForm) {
     try {
       const patient = await api('/register', { method: 'POST', headers: json.headers, body: JSON.stringify(Object.fromEntries(new FormData(registrationForm))) });
       const formData = Object.fromEntries(new FormData(registrationForm));
-      const languageNames = { en: 'English', hi: 'Hindi', te: 'Telugu', kn: 'Kannada' };
-      registrationForm.classList.add('hidden'); document.querySelector('#confirmation').classList.remove('hidden');
-      document.querySelector('#token-number').textContent = `#${patient.patient.token}`;
-      document.querySelector('#confirmed-phone').textContent = patient.patient.phone;
-      document.querySelector('#confirmed-name').textContent = patient.patient.name;
-      document.querySelector('#confirmed-number').textContent = patient.patient.phone;
-      document.querySelector('#confirmed-visit').textContent = patient.patient.notes || formData.notes;
-      document.querySelector('#confirmed-language').textContent = languageNames[patient.patient.language] || patient.patient.language;
-      localStorage.setItem(tokenStorageKey, String(patient.patient.token));
-      showPatientQueue(patient.patient.token);
+      const patientDetails = {
+        name: patient.patient.name,
+        whatsapp: patient.patient.phone,
+        language: patient.patient.language,
+        visitType: patient.patient.notes || formData.notes,
+        token: patient.patient.token
+      };
+      localStorage.setItem(patientDetailsStorageKey, JSON.stringify(patientDetails));
+      showPatientQueue(patientDetails);
     } catch (error) { alert(error.message); button.disabled = false; button.innerHTML = 'Get my token <span>→</span>'; }
   });
 }
 
 const registerAnother = document.querySelector('#register-another');
-if (registerAnother) registerAnother.addEventListener('click', () => localStorage.removeItem(tokenStorageKey));
+if (registerAnother) registerAnother.addEventListener('click', () => localStorage.removeItem(patientDetailsStorageKey));
 
 async function refreshDashboard() {
   const queue = await api('/api/queue'); const summary = await api('/api/summary');
