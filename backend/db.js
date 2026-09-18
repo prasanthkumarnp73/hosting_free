@@ -2,6 +2,8 @@ const { Pool } = require('pg');
 
 const connectionString = process.env.DATABASE_URL;
 const databaseError = new Error('DATABASE_URL is required. Add the PostgreSQL Internal Database URL to Render Environment Variables.');
+const localDatabaseError = new Error('DATABASE_URL points to localhost. On Render, replace it with the PostgreSQL Internal Database URL from your Render database.');
+const isLocalDatabase = connectionString && /@(localhost|127\.0\.0\.1|::1)(:\d+)?\b/i.test(connectionString);
 const pool = connectionString ? new Pool({
     connectionString,
     ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false },
@@ -78,4 +80,8 @@ async function initializeDatabase() {
   return { prepare, query, pool };
 }
 
-module.exports = connectionString ? initializeDatabase() : Promise.reject(databaseError);
+module.exports = !connectionString
+  ? Promise.reject(databaseError)
+  : isLocalDatabase && process.env.RENDER
+    ? Promise.reject(localDatabaseError)
+    : initializeDatabase();

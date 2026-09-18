@@ -96,6 +96,8 @@ Never commit the real `DATABASE_URL` or share it in chat. Only add it in Render 
 
 If Render logs `DATABASE_URL is required`, the variable was not added to the **web service**. Add it to `view-clinic` under **Environment**, not only to the PostgreSQL database settings. Use the exact key `DATABASE_URL`, paste the complete URL beginning with `postgresql://`, save, and redeploy. If the database password was exposed anywhere, reset it first and paste the new Internal Database URL.
 
+If Render logs `ECONNREFUSED ::1:5432` or `ECONNREFUSED 127.0.0.1:5432`, `DATABASE_URL` is still using the local example value. Remove the current `DATABASE_URL` from the `view-clinic` web service and paste the **Internal Database URL** from the Render PostgreSQL database. It must contain a Render database hostname such as `dpg-...render.com`, never `localhost`, `127.0.0.1`, or `::1`.
+
 ## Deploy to Vercel
 
 The repository includes `vercel.json` and `api/index.js`; Vercel uses that file as the serverless entrypoint. The Vercel build uses sql.js asm.js, which does not require a separate WebAssembly asset. Import the GitHub repository into Vercel with the project root set to the repository root, leave the framework preset as `Other`, and deploy. Add the WhatsApp and clinic environment variables in Vercel Project Settings before enabling live messaging.
