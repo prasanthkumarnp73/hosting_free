@@ -57,8 +57,8 @@ async function updateQueueStatus(token) {
       renderPatientDetails(status.patient_details);
     }
     document.querySelector('#live-current-token').textContent = status.current_token ? `#${status.current_token}` : '—';
-    document.querySelector('#live-patients-ahead').textContent = status.patient_position;
-    document.querySelector('#queue-intimation').classList.toggle('hidden', status.patient_position !== 1);
+    document.querySelector('#queue-intimation').classList.toggle('hidden', status.patient_position !== 1 || status.is_late);
+    document.querySelector('#late-message').classList.toggle('hidden', !status.is_late);
   } catch (error) {
     if (error.message === 'Token not found for today.') {
       localStorage.removeItem(patientDetailsStorageKey);
@@ -147,11 +147,11 @@ async function refreshDashboard() {
     }
     document.querySelector('#current-token').textContent = summary.current ? `#${summary.current.token}` : '—';
     document.querySelector('#current-patient').textContent = summary.current ? summary.current.name : 'No consultation in progress';
-    const statusLabels = { waiting: 'In Queue', late_arrival: 'Late Arrival', called: 'Consultation In Progress', completed: 'Completed', no_show: 'No Show' };
+    const statusLabels = { waiting: 'In Queue', late: 'Late', late_arrival: 'Late', called: 'Consultation In Progress', completed: 'Completed', no_show: 'No Show' };
     document.querySelector('#queue-body').innerHTML = queue.map(patient => {
       const actions = patient.status === 'waiting'
         ? `<button class="action-link" data-late="${patient.id}">Mark late</button>`
-        : patient.status === 'late_arrival'
+        : ['late', 'late_arrival'].includes(patient.status)
           ? `<div class="queue-actions"><button class="action-link" data-requeue="${patient.id}" data-policy="next_available">Next slot</button><button class="action-link" data-requeue="${patient.id}" data-policy="end_of_queue">End of queue</button><button class="action-link" data-requeue="${patient.id}" data-policy="priority">Priority</button></div>`
           : patient.status === 'called' ? `<button class="action-link" data-complete="${patient.id}">Complete</button>` : '';
       return `<tr><td>#${patient.token}</td><td><strong>${escapeHtml(patient.name)}</strong><br><small class="muted">${escapeHtml(patient.phone)}</small></td><td>${escapeHtml(patient.notes || 'General consultation')}</td><td>${new Date(patient.checkedInAt || patient.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td><td><span class="status ${patient.status}">${statusLabels[patient.status] || patient.status}</span></td><td>${actions}</td></tr>`;
@@ -165,7 +165,7 @@ async function refreshDashboard() {
     document.querySelector('#doctor-waiting').textContent = summary.waiting; document.querySelector('#doctor-total').textContent = summary.waiting + summary.inConsultation + summary.completed; document.querySelector('#booked-count').textContent = summary.booked; document.querySelector('#doctor-completed').textContent = summary.completed;
     document.querySelector('#doctor-current-token').textContent = summary.current ? `#${summary.current.token}` : '—';
     document.querySelector('#doctor-current-patient').textContent = summary.current ? summary.current.name : 'Waiting for reception';
-    const statusLabels = { waiting: 'In Queue', late_arrival: 'Late Arrival', called: 'Consultation In Progress', completed: 'Completed', no_show: 'No Show' };
+    const statusLabels = { waiting: 'In Queue', late: 'Late', late_arrival: 'Late', called: 'Consultation In Progress', completed: 'Completed', no_show: 'No Show' };
     document.querySelector('#activity-list').innerHTML = queue.map(patient => `<div class="activity-item"><span class="activity-token">#${patient.token}</span><div><strong>${escapeHtml(patient.name)}</strong><small>${escapeHtml(patient.notes || 'General consultation')} · checked in ${new Date(patient.checkedInAt || patient.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small></div><span class="status ${patient.status}">${statusLabels[patient.status] || patient.status}</span></div>`).join('') || '<p class="muted">No activity yet today.</p>';
     if (!document.querySelector('#qr-image').src) { const qr = await api('/api/qr'); document.querySelector('#qr-image').src = qr.dataUrl; }
   }

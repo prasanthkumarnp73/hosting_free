@@ -43,7 +43,7 @@ async function getQueue() {
     SELECT id, name, phone, language, notes, token, status, created_at AS createdAt, checked_in_at AS checkedInAt, queue_order AS queueOrder
     FROM patients
     WHERE created_at::date = ?
-    ORDER BY CASE status WHEN 'called' THEN 0 WHEN 'waiting' THEN 1 WHEN 'late_arrival' THEN 2 ELSE 3 END, COALESCE(queue_order, token), token
+    ORDER BY CASE status WHEN 'called' THEN 0 WHEN 'waiting' THEN 1 WHEN 'late' THEN 2 WHEN 'late_arrival' THEN 2 ELSE 3 END, COALESCE(queue_order, token), token
   `).all(today());
 }
 
@@ -74,6 +74,8 @@ const queueStatus = async (req, res) => {
       token: patient.token
     },
     current_token: current?.token || null,
+    status: patient.status === 'late_arrival' ? 'late' : patient.status,
+    is_late: ['late', 'late_arrival'].includes(patient.status),
     patient_position: ahead.count,
     patients_ahead: ahead.count
   });
@@ -127,23 +129,36 @@ app.patch('/api/patients/:id/late', async (req, res) => {
   if (!patient) return res.status(404).json({ error: 'Patient not found.' });
   if (!['waiting', 'checked_in'].includes(patient.status)) return res.status(400).json({ error: 'Only a waiting patient can be marked late.' });
   const appointment = await db.prepare('SELECT id FROM appointments WHERE patient_id = ? AND date = ? ORDER BY id DESC LIMIT 1').get(patient.id, today());
-  await db.prepare("UPDATE patients SET status = 'late_arrival' WHERE id = ?").run(patient.id);
-  await db.prepare("UPDATE appointments SET status = 'late_arrival' WHERE id = ?").run(appointment.id);
-  await recordHistory(patient.id, appointment.id, patient.status, 'late_arrival', 'Patient arrived after scheduled sequence');
+  await db.prepare("UPDATE patients SET status = 'late' WHERE id = ?").run(patient.id);
+  await db.prepare("UPDATE appointments SET status = 'late' WHERE id = ?").run(appointment.id);
+  await recordHistory(patient.id, appointment.id, patient.status, 'late', 'Patient arrived after scheduled sequence');
   try { await notifyDoctor(`Patient ${patient.name} (token #${patient.token}) has checked in late and is waiting for a new slot.`, 'Late arrival alert'); } catch (error) { console.error(error.message); }
-  res.json({ success: true, status: 'late_arrival' });
+  res.json({ success: true, status: 'late' });
+});
+
+app.get('/queue/markLate', async (req, res) => {
+  const token = Number.parseInt(req.query.token, 10);
+  if (!Number.isInteger(token) || token < 1) return res.status(400).json({ error: 'A valid token is required.' });
+  const patient = await db.prepare('SELECT id, name, phone, token, status FROM patients WHERE token = ? AND created_at::date = ?').get(token, today());
+  if (!patient) return res.status(404).json({ error: 'Patient not found.' });
+  if (!['waiting', 'checked_in'].includes(patient.status)) return res.status(400).json({ error: 'Only a waiting patient can be marked late.' });
+  const appointment = await db.prepare('SELECT id FROM appointments WHERE patient_id = ? AND date = ? ORDER BY id DESC LIMIT 1').get(patient.id, today());
+  await db.prepare("UPDATE patients SET status = 'late' WHERE id = ?").run(patient.id);
+  await db.prepare("UPDATE appointments SET status = 'late' WHERE id = ?").run(appointment.id);
+  await recordHistory(patient.id, appointment.id, patient.status, 'late', 'Reception marked patient late');
+  res.json({ success: true, status: 'late', token: patient.token });
 });
 
 app.patch('/api/patients/:id/requeue', async (req, res) => {
   const policy = ['next_available', 'end_of_queue', 'priority'].includes(req.body?.policy) ? req.body.policy : 'end_of_queue';
   const patient = await db.prepare('SELECT id, status FROM patients WHERE id = ?').get(req.params.id);
-  if (!patient || patient.status !== 'late_arrival') return res.status(400).json({ error: 'Only a late-arrival patient can be requeued.' });
+  if (!patient || !['late', 'late_arrival'].includes(patient.status)) return res.status(400).json({ error: 'Only a late-arrival patient can be requeued.' });
   const appointment = await db.prepare('SELECT id FROM appointments WHERE patient_id = ? AND date = ? ORDER BY id DESC LIMIT 1').get(patient.id, today());
   const bounds = await db.prepare("SELECT MIN(COALESCE(queue_order, token)) AS minimum, MAX(COALESCE(queue_order, token)) AS maximum FROM patients WHERE status = 'waiting' AND created_at::date = ?").get(today());
   const queueOrder = policy === 'end_of_queue' ? (bounds.maximum ?? 0) + 1 : (bounds.minimum ?? 1) - 0.5;
   await db.prepare("UPDATE patients SET status = 'waiting', queue_order = ? WHERE id = ?").run(queueOrder, patient.id);
   await db.prepare("UPDATE appointments SET status = 'in_queue' WHERE id = ?").run(appointment.id);
-  await recordHistory(patient.id, appointment.id, 'late_arrival', 'in_queue', `Late patient requeued using ${policy.replaceAll('_', ' ')} policy`, policy);
+  await recordHistory(patient.id, appointment.id, patient.status, 'in_queue', `Late patient requeued using ${policy.replaceAll('_', ' ')} policy`, policy);
   res.json({ success: true, policy, queueOrder });
 });
 

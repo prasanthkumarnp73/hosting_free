@@ -287,6 +287,7 @@ td:first-child { color: var(--orange); font-weight: 700; }
 .patient-page .queue-live-grid span { display: block; color: #557066; font-size: 10px; font-weight: 700; line-height: 1.35; text-transform: uppercase; }
 .patient-page .queue-live-grid strong { display: block; margin-top: 7px; color: #164d38; font-size: 22px; font-weight: 700; }
 .patient-page .queue-intimation { margin: 16px 0 0; padding: 13px 15px; border: 1px solid #f0c95a; border-radius: 10px; background: #fff6d7; color: #765400; font-size: 13px; font-weight: 700; line-height: 1.45; animation: queue-pulse 1.8s ease-in-out infinite; }
+.patient-page .late-message { margin: 16px 0 0; padding: 13px 15px; border: 1px solid #efb19c; border-radius: 10px; background: #fff0e9; color: #a4482d; font-size: 13px; font-weight: 700; line-height: 1.45; }
 @keyframes queue-pulse { 50% { box-shadow: 0 0 0 5px rgba(240, 201, 90, .16); } }
 
 @media (max-width: 480px) {
