@@ -1,15 +1,14 @@
 const { Pool } = require('pg');
 
 const connectionString = process.env.DATABASE_URL;
-if (!connectionString) module.exports = Promise.reject(new Error('DATABASE_URL is required. Add your PostgreSQL connection string to .env.'));
-
-const pool = new Pool({
-  connectionString,
-  ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false },
-  max: Number(process.env.DATABASE_POOL_SIZE || 5),
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000
-});
+const databaseError = new Error('DATABASE_URL is required. Add the PostgreSQL Internal Database URL to Render Environment Variables.');
+const pool = connectionString ? new Pool({
+    connectionString,
+    ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false },
+    max: Number(process.env.DATABASE_POOL_SIZE || 5),
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000
+  }) : null;
 
 let postgresSqlParameter = 1;
 function convertPlaceholders(sql) {
@@ -79,4 +78,4 @@ async function initializeDatabase() {
   return { prepare, query, pool };
 }
 
-if (connectionString) module.exports = initializeDatabase();
+module.exports = connectionString ? initializeDatabase() : Promise.reject(databaseError);
