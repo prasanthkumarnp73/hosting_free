@@ -188,7 +188,7 @@ async function refreshDashboard() {
         : ['late', 'late_arrival'].includes(patient.status)
           ? `<div class="queue-actions"><button class="action-link" data-requeue="${patient.id}" data-policy="next_available">Next slot</button><button class="action-link" data-requeue="${patient.id}" data-policy="end_of_queue">End of queue</button><button class="action-link" data-requeue="${patient.id}" data-policy="priority">Priority</button></div>`
           : patient.status === 'called' ? `<button class="action-link" data-complete="${patient.id}">Complete</button>` : '';
-      return `<tr><td>#${patient.token}</td><td><strong>${escapeHtml(patient.name)}</strong><br><small class="muted">${escapeHtml(patient.phone)}</small></td><td>${escapeHtml(patient.notes || 'General consultation')}</td><td>${new Date(patient.checkedInAt || patient.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td><td><span class="status ${patient.status}">${statusLabels[patient.status] || patient.status}</span></td><td>${actions}</td></tr>`;
+      return `<tr><td>#${patient.token}</td><td><strong>${escapeHtml(patient.name)}</strong><br><small class="muted">${escapeHtml(patient.phone)}</small></td><td>${escapeHtml(patient.notes || 'General consultation')}</td><td>${formatCheckedInTime(patient)}</td><td><span class="status ${patient.status}">${statusLabels[patient.status] || patient.status}</span></td><td>${actions}</td></tr>`;
     }).join('') || '<tr><td colspan="6" class="muted">No patients have joined today.</td></tr>';
     document.querySelectorAll('[data-late]').forEach(button => button.addEventListener('click', async () => { await api(`/api/patients/${button.dataset.late}/late`, { method: 'PATCH', headers: json.headers }); refreshDashboard(); }));
     document.querySelectorAll('[data-requeue]').forEach(button => button.addEventListener('click', async () => { await api(`/api/patients/${button.dataset.requeue}/requeue`, { method: 'PATCH', headers: json.headers, body: JSON.stringify({ policy: button.dataset.policy }) }); refreshDashboard(); }));
@@ -200,12 +200,19 @@ async function refreshDashboard() {
     document.querySelector('#doctor-current-token').textContent = summary.current ? `#${summary.current.token}` : '—';
     document.querySelector('#doctor-current-patient').textContent = summary.current ? summary.current.name : 'Waiting for reception';
     const statusLabels = { waiting: 'In Queue', late: 'Late', late_arrival: 'Late', called: 'Consultation In Progress', completed: 'Completed', no_show: 'No Show' };
-    document.querySelector('#activity-list').innerHTML = queue.map(patient => `<div class="activity-item"><span class="activity-token">#${patient.token}</span><div><strong>${escapeHtml(patient.name)}</strong><small>${escapeHtml(patient.notes || 'General consultation')} · checked in ${new Date(patient.checkedInAt || patient.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small></div><span class="status ${patient.status}">${statusLabels[patient.status] || patient.status}</span></div>`).join('') || '<p class="muted">No activity yet today.</p>';
+    document.querySelector('#activity-list').innerHTML = queue.map(patient => `<div class="activity-item"><span class="activity-token">#${patient.token}</span><div><strong>${escapeHtml(patient.name)}</strong><small>${escapeHtml(patient.notes || 'General consultation')} · checked in ${formatCheckedInTime(patient)}</small></div><span class="status ${patient.status}">${statusLabels[patient.status] || patient.status}</span></div>`).join('') || '<p class="muted">No activity yet today.</p>';
     if (!document.querySelector('#qr-image').src) { const qr = await api('/api/qr'); document.querySelector('#qr-image').src = qr.dataUrl; }
   }
 }
 
 function escapeHtml(value) { return String(value).replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character])); }
+function formatCheckedInTime(patient) {
+  const timestamp = patient.checkedInAt || patient.createdAt;
+  const date = timestamp ? new Date(timestamp) : null;
+  return date && !Number.isNaN(date.getTime())
+    ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : '—';
+}
 const callNext = document.querySelector('#call-next');
 if (callNext) callNext.addEventListener('click', async () => { try { const patient = await api('/api/queue/next', { method: 'POST' }); alert(`Now calling #${patient.token} · ${patient.name}`); refreshDashboard(); } catch (error) { alert(error.message); } });
 if (document.querySelector('.dashboard-page')) { refreshDashboard(); setInterval(refreshDashboard, 10000); }

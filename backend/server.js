@@ -40,7 +40,7 @@ async function getSummary() {
 
 async function getQueue() {
   return db.prepare(`
-    SELECT id, name, phone, language, notes, token, status, created_at AS createdAt, checked_in_at AS checkedInAt, queue_order AS queueOrder
+    SELECT id, name, phone, language, notes, token, status, created_at AS "createdAt", checked_in_at AS "checkedInAt", queue_order AS "queueOrder"
     FROM patients
     WHERE created_at::date = ?
     ORDER BY CASE status WHEN 'called' THEN 0 WHEN 'waiting' THEN 1 WHEN 'late' THEN 2 WHEN 'late_arrival' THEN 2 ELSE 3 END, COALESCE(queue_order, token), token
