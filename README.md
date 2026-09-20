@@ -26,6 +26,8 @@ The developer portal is separate from clinic administration. Set `PLATFORM_ADMIN
 
 Staff recovery is available from `/login.html`. The request appears in the developer portal under “Account recovery requests”. The platform owner verifies the clinic and identity, issues a temporary password, and gives it to the staff member securely. Existing passwords are never displayed. Receptionists must use a receptionist account, doctors a doctor account, and clinic admins the admin account; opening the wrong dashboard now redirects to the correct one.
 
+OTP login uses the registered mobile number. Set `ADMIN_PHONE` and `PLATFORM_ADMIN_PHONE` for the bootstrap accounts. For real SMS delivery on Render, also set `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_PHONE_NUMBER`. Without Twilio variables, OTPs are printed in the server log as demo codes and are not sent to a phone. Staff phone numbers are entered when an admin creates their account.
+
 ## Routes
 
 - `POST /register` creates a patient, daily token, appointment, and confirmation message.

@@ -4,6 +4,7 @@ const express = require('express');
 const cron = require('node-cron');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const twilio = require('twilio');
 let db;
 const { generateClinicQr } = require('./utils/qr');
 const { sendWhatsAppMessage, notifyDoctor, patientConfirmation, isConfigured } = require('./utils/whatsapp');
@@ -12,6 +13,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 const clinicUrl = process.env.CLINIC_URL || `http://localhost:${port}`;
 const jwtSecret = process.env.JWT_SECRET || 'clinicflow-development-secret';
+const twilioClient = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN) : null;
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'frontend')));
 const databaseReady = require('./db').then(database => {
@@ -69,6 +71,31 @@ const today = () => {
 const timeNow = () => new Date().toISOString();
 const phonePattern = /^(?:[0-9]{10}|\+91[0-9]{10})$/;
 const normalizePhone = phone => phone.startsWith('+91') ? phone : `+91${phone}`;
+const tenDigitPhonePattern = /^[0-9]{10}$/;
+const normalizeLoginPhone = phone => {
+  const value = String(phone || '').replace(/\s|-/g, '');
+  if (tenDigitPhonePattern.test(value)) return `+91${value}`;
+  if (/^\+91[0-9]{10}$/.test(value)) return value;
+  return null;
+};
+const hashOtp = (phone, code) => crypto.createHash('sha256').update(`${phone}:${code}:${jwtSecret}`).digest('hex');
+async function sendLoginOtp(phone, code) {
+  const body = `Your ClinicFlow login code is ${code}. It expires in 5 minutes. Do not share this code.`;
+  if (twilioClient && process.env.TWILIO_PHONE_NUMBER) {
+    await twilioClient.messages.create({ body, from: process.env.TWILIO_PHONE_NUMBER, to: phone });
+    return 'sms';
+  }
+  console.log(`[OTP DEMO] Login code for ${phone}: ${code}`);
+  return 'demo';
+}
+function signClinicUser(user, clinicId) {
+  const token = jwt.sign({ sub: user.id, clinic_id: clinicId, role: user.role, name: user.name, email: user.email }, jwtSecret, { expiresIn: '12h' });
+  return { token, user: { name: user.name, email: user.email, role: user.role, clinic_id: clinicId } };
+}
+function signPlatformUser(owner) {
+  const token = jwt.sign({ sub: owner.id, scope: 'platform', name: owner.name, email: owner.email }, jwtSecret, { expiresIn: '12h' });
+  return { token, user: { name: owner.name, email: owner.email } };
+}
 
 async function getSummary(clinicId) {
   const date = today();
@@ -94,14 +121,48 @@ async function recordHistory(clinicId, patientId, appointmentId, fromStatus, toS
   await db.prepare('INSERT INTO appointment_history (clinic_id, patient_id, appointment_id, from_status, to_status, reason, queue_policy, changed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(clinicId, patientId, appointmentId, fromStatus, toStatus, reason, queuePolicy, timeNow());
 }
 
+async function createOtp(scope, clinicId, phone) {
+  const code = String(crypto.randomInt(100000, 1000000));
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  await db.prepare("UPDATE login_otps SET used_at = ? WHERE scope = ? AND clinic_id IS NOT DISTINCT FROM ? AND phone = ? AND used_at IS NULL").run(timeNow(), scope, clinicId, phone);
+  await db.prepare('INSERT INTO login_otps (scope, clinic_id, phone, code_hash, expires_at) VALUES (?, ?, ?, ?, ?)').run(scope, clinicId, phone, hashOtp(phone, code), expiresAt);
+  return sendLoginOtp(phone, code);
+}
+
+async function consumeOtp(scope, clinicId, phone, code) {
+  const challenge = await db.prepare("SELECT id, code_hash, expires_at, attempts FROM login_otps WHERE scope = ? AND clinic_id IS NOT DISTINCT FROM ? AND phone = ? AND used_at IS NULL ORDER BY created_at DESC LIMIT 1").get(scope, clinicId, phone);
+  if (!challenge || new Date(challenge.expires_at) < new Date() || challenge.attempts >= 5) return false;
+  await db.prepare('UPDATE login_otps SET attempts = attempts + 1 WHERE id = ?').run(challenge.id);
+  if (hashOtp(phone, code) !== challenge.code_hash) return false;
+  await db.prepare('UPDATE login_otps SET used_at = ? WHERE id = ?').run(timeNow(), challenge.id);
+  return true;
+}
+
+app.post('/api/auth/otp/request', async (req, res) => {
+  const phone = normalizeLoginPhone(req.body?.phone);
+  if (!phone) return res.status(400).json({ error: 'Enter a valid 10-digit mobile number.' });
+  const user = await db.prepare('SELECT id FROM users WHERE clinic_id = ? AND phone = ?').get(req.clinicId, phone);
+  if (!user) return res.status(202).json({ message: 'If this mobile number belongs to a clinic account, an OTP has been sent.' });
+  const delivery = await createOtp('clinic', req.clinicId, phone);
+  res.json({ message: delivery === 'sms' ? 'OTP sent to your mobile number.' : 'Demo OTP generated. Check the server log.', demo: delivery === 'demo' });
+});
+app.post('/api/auth/otp/verify', async (req, res) => {
+  const phone = normalizeLoginPhone(req.body?.phone);
+  const code = String(req.body?.code || '').trim();
+  if (!phone || !/^\d{6}$/.test(code)) return res.status(400).json({ error: 'Enter a valid mobile number and 6-digit OTP.' });
+  if (!await consumeOtp('clinic', req.clinicId, phone, code)) return res.status(401).json({ error: 'Invalid or expired OTP.' });
+  const user = await db.prepare('SELECT id, name, email, role FROM users WHERE clinic_id = ? AND phone = ?').get(req.clinicId, phone);
+  if (!user) return res.status(401).json({ error: 'Clinic account not found.' });
+  res.json(signClinicUser(user, req.clinicId));
+});
+
 app.post('/api/auth/login', async (req, res) => {
   const email = req.body?.email?.trim().toLowerCase();
   const password = req.body?.password || '';
   const user = email ? await db.prepare('SELECT id, name, email, password_hash, role FROM users WHERE clinic_id = ? AND email = ?').get(req.clinicId, email) : null;
   const passwordHash = user ? crypto.scryptSync(password, email, 64).toString('hex') : '';
   if (!user || !crypto.timingSafeEqual(Buffer.from(passwordHash), Buffer.from(user.password_hash))) return res.status(401).json({ error: 'Invalid email or password.' });
-  const token = jwt.sign({ sub: user.id, clinic_id: req.clinicId, role: user.role, name: user.name, email: user.email }, jwtSecret, { expiresIn: '12h' });
-  res.json({ token, user: { name: user.name, email: user.email, role: user.role, clinic_id: req.clinicId } });
+  res.json(signClinicUser(user, req.clinicId));
 });
 app.post('/api/account/recovery', async (req, res) => {
   const { name, email, phone, role } = req.body || {};
@@ -115,8 +176,24 @@ app.post('/api/platform/auth/login', async (req, res) => {
   const owner = email ? await db.prepare('SELECT id, name, email, password_hash FROM platform_admins WHERE email = ?').get(email) : null;
   const passwordHash = owner ? crypto.scryptSync(password, email, 64).toString('hex') : '';
   if (!owner || !crypto.timingSafeEqual(Buffer.from(passwordHash), Buffer.from(owner.password_hash))) return res.status(401).json({ error: 'Invalid platform email or password.' });
-  const token = jwt.sign({ sub: owner.id, scope: 'platform', name: owner.name, email: owner.email }, jwtSecret, { expiresIn: '12h' });
-  res.json({ token, user: { name: owner.name, email: owner.email } });
+  res.json(signPlatformUser(owner));
+});
+app.post('/api/platform/auth/otp/request', async (req, res) => {
+  const phone = normalizeLoginPhone(req.body?.phone);
+  if (!phone) return res.status(400).json({ error: 'Enter a valid 10-digit mobile number.' });
+  const owner = await db.prepare('SELECT id FROM platform_admins WHERE phone = ?').get(phone);
+  if (!owner) return res.status(202).json({ message: 'If this mobile number belongs to the platform owner, an OTP has been sent.' });
+  const delivery = await createOtp('platform', null, phone);
+  res.json({ message: delivery === 'sms' ? 'OTP sent to your mobile number.' : 'Demo OTP generated. Check the server log.', demo: delivery === 'demo' });
+});
+app.post('/api/platform/auth/otp/verify', async (req, res) => {
+  const phone = normalizeLoginPhone(req.body?.phone);
+  const code = String(req.body?.code || '').trim();
+  if (!phone || !/^\d{6}$/.test(code)) return res.status(400).json({ error: 'Enter a valid mobile number and 6-digit OTP.' });
+  if (!await consumeOtp('platform', null, phone, code)) return res.status(401).json({ error: 'Invalid or expired OTP.' });
+  const owner = await db.prepare('SELECT id, name, email FROM platform_admins WHERE phone = ?').get(phone);
+  if (!owner) return res.status(401).json({ error: 'Platform account not found.' });
+  res.json(signPlatformUser(owner));
 });
 app.get('/api/platform/clinics', authenticatePlatform, async (_req, res) => {
   const clinics = await db.prepare(`
@@ -324,7 +401,9 @@ app.post('/api/admin/staff', authenticate, allowRoles('admin'), async (req, res)
   const normalizedEmail = email.trim().toLowerCase();
   const passwordHash = crypto.scryptSync(password, normalizedEmail, 64).toString('hex');
   try {
-    const result = await db.prepare('INSERT INTO users (clinic_id, name, email, phone, password_hash, role) VALUES (?, ?, ?, ?, ?, ?) RETURNING id').run(req.clinicId, name.trim(), normalizedEmail, phone?.trim() || null, passwordHash, role);
+    const normalizedStaffPhone = phone ? normalizeLoginPhone(phone) : null;
+    if (phone && !normalizedStaffPhone) return res.status(400).json({ error: 'Mobile number must be 10 digits or +91 followed by 10 digits.' });
+    const result = await db.prepare('INSERT INTO users (clinic_id, name, email, phone, password_hash, role) VALUES (?, ?, ?, ?, ?, ?) RETURNING id').run(req.clinicId, name.trim(), normalizedEmail, normalizedStaffPhone, passwordHash, role);
     res.status(201).json(await db.prepare('SELECT id, name, email, role FROM users WHERE clinic_id = ? AND id = ?').get(req.clinicId, result.lastInsertRowid));
   } catch (error) {
     if (error.code === '23505') return res.status(409).json({ error: 'That email is already used in this clinic.' });

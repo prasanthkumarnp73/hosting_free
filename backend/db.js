@@ -37,6 +37,7 @@ function query(sql, params = []) {
 async function initializeDatabase() {
   const clinicId = process.env.CLINIC_ID || 'default';
   const clinicName = process.env.CLINIC_NAME || (clinicId === 'default' ? 'Prasanth Clinic' : 'GJ Clinic');
+  const normalizePhone = phone => phone && /^[0-9]{10}$/.test(phone) ? `+91${phone}` : phone || null;
   await query(`
     DO $$ BEGIN
       CREATE TYPE user_role AS ENUM ('receptionist', 'doctor', 'admin');
@@ -52,6 +53,7 @@ async function initializeDatabase() {
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
       email TEXT NOT NULL UNIQUE,
+      phone TEXT UNIQUE,
       password_hash TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -65,6 +67,17 @@ async function initializeDatabase() {
       role user_role NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE (clinic_id, email)
+    );
+    CREATE TABLE IF NOT EXISTS login_otps (
+      id SERIAL PRIMARY KEY,
+      scope TEXT NOT NULL CHECK (scope IN ('clinic', 'platform')),
+      clinic_id TEXT,
+      phone TEXT NOT NULL,
+      code_hash TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      used_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS account_recovery_requests (
       id SERIAL PRIMARY KEY,
@@ -125,6 +138,8 @@ async function initializeDatabase() {
   await query("INSERT INTO clinics (id, name) VALUES (?, ?) ON CONFLICT (id) DO NOTHING", [clinicId, clinicName]);
   await query("ALTER TABLE clinics ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'");
   await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT");
+  await query("ALTER TABLE platform_admins ADD COLUMN IF NOT EXISTS phone TEXT");
+  await query("CREATE INDEX IF NOT EXISTS login_otps_lookup_idx ON login_otps (scope, clinic_id, phone, expires_at)");
   await query("CREATE INDEX IF NOT EXISTS clinics_status_idx ON clinics (status)");
   await query("ALTER TABLE doctors ADD COLUMN IF NOT EXISTS clinic_id TEXT NOT NULL DEFAULT 'default'");
   await query("ALTER TABLE patients ADD COLUMN IF NOT EXISTS clinic_id TEXT NOT NULL DEFAULT 'default'");
@@ -136,13 +151,17 @@ async function initializeDatabase() {
   if (process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD) {
     const crypto = require('crypto');
     const passwordHash = crypto.scryptSync(process.env.ADMIN_PASSWORD, process.env.ADMIN_EMAIL, 64).toString('hex');
-    await query("INSERT INTO users (clinic_id, name, email, password_hash, role) VALUES (?, ?, ?, ?, 'admin') ON CONFLICT (clinic_id, email) DO NOTHING", [clinicId, process.env.ADMIN_NAME || 'Clinic Admin', process.env.ADMIN_EMAIL.toLowerCase(), passwordHash]);
+    const adminPhone = normalizePhone(process.env.ADMIN_PHONE);
+    await query("INSERT INTO users (clinic_id, name, email, phone, password_hash, role) VALUES (?, ?, ?, ?, ?, 'admin') ON CONFLICT (clinic_id, email) DO NOTHING", [clinicId, process.env.ADMIN_NAME || 'Clinic Admin', process.env.ADMIN_EMAIL.toLowerCase(), adminPhone, passwordHash]);
+    if (adminPhone) await query("UPDATE users SET phone = ? WHERE clinic_id = ? AND email = ?", [adminPhone, clinicId, process.env.ADMIN_EMAIL.toLowerCase()]);
   }
   if (process.env.PLATFORM_ADMIN_EMAIL && process.env.PLATFORM_ADMIN_PASSWORD) {
     const crypto = require('crypto');
     const email = process.env.PLATFORM_ADMIN_EMAIL.toLowerCase();
     const passwordHash = crypto.scryptSync(process.env.PLATFORM_ADMIN_PASSWORD, email, 64).toString('hex');
-    await query("INSERT INTO platform_admins (name, email, password_hash) VALUES (?, ?, ?) ON CONFLICT (email) DO NOTHING", [process.env.PLATFORM_ADMIN_NAME || 'Platform Owner', email, passwordHash]);
+    const platformPhone = normalizePhone(process.env.PLATFORM_ADMIN_PHONE);
+    await query("INSERT INTO platform_admins (name, email, phone, password_hash) VALUES (?, ?, ?, ?) ON CONFLICT (email) DO NOTHING", [process.env.PLATFORM_ADMIN_NAME || 'Platform Owner', email, platformPhone, passwordHash]);
+    if (platformPhone) await query("UPDATE platform_admins SET phone = ? WHERE email = ?", [platformPhone, email]);
   }
   return { prepare, query, pool };
 }

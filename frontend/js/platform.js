@@ -23,6 +23,31 @@ if (platformLoginForm) platformLoginForm.addEventListener('submit', async event 
   }
 });
 
+const platformOtpLoginForm = document.querySelector('#platform-otp-login-form');
+const platformOtpVerifyForm = document.querySelector('#platform-otp-verify-form');
+let platformOtpPhone = '';
+if (platformOtpLoginForm && platformOtpVerifyForm) {
+  platformOtpLoginForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    platformOtpPhone = Object.fromEntries(new FormData(platformOtpLoginForm)).phone;
+    try {
+      const result = await platformApi('/api/platform/auth/otp/request', { method: 'POST', body: JSON.stringify({ phone: platformOtpPhone }) });
+      document.querySelector('#platform-otp-message').textContent = result.message;
+      platformOtpVerifyForm.classList.remove('hidden');
+    } catch (error) { document.querySelector('#platform-otp-message').textContent = error.message; }
+  });
+  platformOtpVerifyForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    try {
+      const result = await platformApi('/api/platform/auth/otp/verify', { method: 'POST', body: JSON.stringify({ phone: platformOtpPhone, code: Object.fromEntries(new FormData(platformOtpVerifyForm)).code }) });
+      localStorage.setItem('clinicflowPlatformToken', result.token);
+      window.location.href = '/platform.html';
+    } catch (error) { document.querySelector('#platform-otp-verify-message').textContent = error.message; }
+  });
+}
+const showPlatformPasswordLogin = document.querySelector('#show-platform-password-login');
+if (showPlatformPasswordLogin) showPlatformPasswordLogin.addEventListener('click', event => { event.preventDefault(); document.querySelector('#platform-login-form').classList.toggle('hidden'); });
+
 function platformEscape(value) { return String(value).replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character])); }
 async function refreshPlatform() {
   if (!document.querySelector('.platform-view')) return;

@@ -31,6 +31,32 @@ if (loginForm) {
   });
 }
 
+const otpLoginForm = document.querySelector('#otp-login-form');
+const otpVerifyForm = document.querySelector('#otp-verify-form');
+let otpLoginPhone = '';
+if (otpLoginForm && otpVerifyForm) {
+  otpLoginForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    otpLoginPhone = Object.fromEntries(new FormData(otpLoginForm)).phone;
+    try {
+      const result = await api('/api/auth/otp/request', { method: 'POST', body: JSON.stringify({ phone: otpLoginPhone }) });
+      document.querySelector('#otp-login-message').textContent = result.message;
+      otpVerifyForm.classList.remove('hidden');
+    } catch (error) { document.querySelector('#otp-login-message').textContent = error.message; }
+  });
+  otpVerifyForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    try {
+      const result = await api('/api/auth/otp/verify', { method: 'POST', body: JSON.stringify({ phone: otpLoginPhone, code: Object.fromEntries(new FormData(otpVerifyForm)).code }) });
+      localStorage.setItem('clinicflowToken', result.token);
+      const destinations = { receptionist: '/receptionist.html', doctor: '/doctor.html', admin: '/admin.html' };
+      window.location.href = destinations[result.user.role] || '/';
+    } catch (error) { document.querySelector('#otp-verify-message').textContent = error.message; }
+  });
+}
+const showPasswordLogin = document.querySelector('#show-password-login');
+if (showPasswordLogin) showPasswordLogin.addEventListener('click', event => { event.preventDefault(); document.querySelector('#login-form').classList.toggle('hidden'); });
+
 const showRecovery = document.querySelector('#show-recovery');
 const recoveryForm = document.querySelector('#recovery-form');
 if (showRecovery && recoveryForm) showRecovery.addEventListener('click', event => { event.preventDefault(); recoveryForm.classList.toggle('hidden'); });
