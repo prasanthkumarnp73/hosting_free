@@ -25,8 +25,10 @@ app.use(async (_req, _res, next) => {
 function resolveClinicId(req) {
   const pathMatch = req.path.match(/^\/clinics\/([a-z0-9-]+)/i);
   if (pathMatch) return pathMatch[1].toLowerCase();
-  const hostname = (req.hostname || '').split('.')[0].toLowerCase();
-  return hostname && !['www', 'localhost', '127'].includes(hostname) ? hostname : (process.env.CLINIC_ID || 'default');
+  const hostname = (req.hostname || '').toLowerCase();
+  if (hostname.endsWith('.onrender.com')) return process.env.CLINIC_ID || 'default';
+  const hostLabel = hostname.split('.')[0];
+  return hostLabel && !['www', 'localhost', '127'].includes(hostLabel) ? hostLabel : (process.env.CLINIC_ID || 'default');
 }
 
 app.use(async (req, _res, next) => {
