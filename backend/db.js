@@ -35,6 +35,8 @@ function query(sql, params = []) {
 }
 
 async function initializeDatabase() {
+  const clinicId = process.env.CLINIC_ID || 'default';
+  const clinicName = process.env.CLINIC_NAME || (clinicId === 'default' ? 'Prasanth Clinic' : 'GJ Clinic');
   await query(`
     DO $$ BEGIN
       CREATE TYPE user_role AS ENUM ('receptionist', 'doctor', 'admin');
@@ -43,6 +45,14 @@ async function initializeDatabase() {
     CREATE TABLE IF NOT EXISTS clinics (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS platform_admins (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS users (
@@ -99,18 +109,26 @@ async function initializeDatabase() {
     CREATE INDEX IF NOT EXISTS patients_created_at_idx ON patients (created_at);
     CREATE INDEX IF NOT EXISTS appointments_date_idx ON appointments (date);
   `);
-  await query("INSERT INTO clinics (id, name) VALUES ('default', 'Prasanth Clinic') ON CONFLICT (id) DO NOTHING");
+  await query("INSERT INTO clinics (id, name) VALUES (?, ?) ON CONFLICT (id) DO NOTHING", [clinicId, clinicName]);
+  await query("ALTER TABLE clinics ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'");
+  await query("CREATE INDEX IF NOT EXISTS clinics_status_idx ON clinics (status)");
   await query("ALTER TABLE doctors ADD COLUMN IF NOT EXISTS clinic_id TEXT NOT NULL DEFAULT 'default'");
   await query("ALTER TABLE patients ADD COLUMN IF NOT EXISTS clinic_id TEXT NOT NULL DEFAULT 'default'");
   await query("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS clinic_id TEXT NOT NULL DEFAULT 'default'");
   await query("ALTER TABLE appointment_history ADD COLUMN IF NOT EXISTS clinic_id TEXT NOT NULL DEFAULT 'default'");
   await query("CREATE INDEX IF NOT EXISTS patients_clinic_created_at_idx ON patients (clinic_id, created_at)");
   await query("CREATE INDEX IF NOT EXISTS appointments_clinic_date_idx ON appointments (clinic_id, date)");
-  await query("INSERT INTO doctors (id, clinic_id, name, specialty) VALUES (1, 'default', 'Dr. Maya Rao', 'Family medicine') ON CONFLICT (id) DO NOTHING");
+  await query("INSERT INTO doctors (clinic_id, name, specialty) SELECT ?, 'Clinic doctor', 'General medicine' WHERE NOT EXISTS (SELECT 1 FROM doctors WHERE clinic_id = ?)", [clinicId, clinicId]);
   if (process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD) {
     const crypto = require('crypto');
     const passwordHash = crypto.scryptSync(process.env.ADMIN_PASSWORD, process.env.ADMIN_EMAIL, 64).toString('hex');
-    await query("INSERT INTO users (clinic_id, name, email, password_hash, role) VALUES ('default', ?, ?, ?, 'admin') ON CONFLICT (clinic_id, email) DO NOTHING", [process.env.ADMIN_NAME || 'Clinic Admin', process.env.ADMIN_EMAIL.toLowerCase(), passwordHash]);
+    await query("INSERT INTO users (clinic_id, name, email, password_hash, role) VALUES (?, ?, ?, ?, 'admin') ON CONFLICT (clinic_id, email) DO NOTHING", [clinicId, process.env.ADMIN_NAME || 'Clinic Admin', process.env.ADMIN_EMAIL.toLowerCase(), passwordHash]);
+  }
+  if (process.env.PLATFORM_ADMIN_EMAIL && process.env.PLATFORM_ADMIN_PASSWORD) {
+    const crypto = require('crypto');
+    const email = process.env.PLATFORM_ADMIN_EMAIL.toLowerCase();
+    const passwordHash = crypto.scryptSync(process.env.PLATFORM_ADMIN_PASSWORD, email, 64).toString('hex');
+    await query("INSERT INTO platform_admins (name, email, password_hash) VALUES (?, ?, ?) ON CONFLICT (email) DO NOTHING", [process.env.PLATFORM_ADMIN_NAME || 'Platform Owner', email, passwordHash]);
   }
   return { prepare, query, pool };
 }

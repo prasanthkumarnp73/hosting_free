@@ -22,6 +22,8 @@ Every operational table carries a `clinic_id`. The service resolves it from the 
 
 Set `JWT_SECRET` in production. To bootstrap the first admin, set `ADMIN_EMAIL`, `ADMIN_PASSWORD`, and optionally `ADMIN_NAME` before the first start. Staff can then be added from `/admin.html`. Use separate clinic subdomains behind the same deployment, for example `sunrise.example.com` and `lakeside.example.com`.
 
+The developer portal is separate from clinic administration. Set `PLATFORM_ADMIN_EMAIL`, `PLATFORM_ADMIN_PASSWORD`, and optionally `PLATFORM_ADMIN_NAME` in the hosting environment, then open `/platform-login.html`. After signing in, `/platform.html` lists every clinic with staff and patient counts. Deactivating a clinic blocks its users and patient registration while retaining data; it can be reactivated from the same portal.
+
 ## Routes
 
 - `POST /register` creates a patient, daily token, appointment, and confirmation message.

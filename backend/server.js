@@ -35,6 +35,10 @@ app.use(async (req, _res, next) => {
   req.clinicId = resolveClinicId(req);
   await db.prepare('INSERT INTO clinics (id, name) VALUES (?, ?) ON CONFLICT (id) DO NOTHING').run(req.clinicId, req.clinicId === 'default' ? 'Prasanth Clinic' : `${req.clinicId} Clinic`);
   await db.prepare("INSERT INTO doctors (clinic_id, name, specialty) SELECT ?, 'Clinic doctor', 'General medicine' WHERE NOT EXISTS (SELECT 1 FROM doctors WHERE clinic_id = ?)").run(req.clinicId, req.clinicId);
+  if (!req.path.startsWith('/api/platform')) {
+    const clinic = await db.prepare('SELECT status FROM clinics WHERE id = ?').get(req.clinicId);
+    if (clinic?.status === 'inactive') return _res.status(410).json({ error: 'This clinic account is inactive.' });
+  }
   next();
 });
 const authenticate = (req, res, next) => {
@@ -47,6 +51,15 @@ const authenticate = (req, res, next) => {
   } catch (_error) { return res.status(401).json({ error: 'Invalid or expired session.' }); }
 };
 const allowRoles = (...roles) => (req, res, next) => roles.includes(req.user?.role) ? next() : res.status(403).json({ error: 'Your role cannot perform this action.' });
+const authenticatePlatform = (req, res, next) => {
+  const token = req.headers.authorization?.replace(/^Bearer\s+/i, '');
+  if (!token) return res.status(401).json({ error: 'Platform authentication is required.' });
+  try {
+    req.platformUser = jwt.verify(token, jwtSecret);
+    if (req.platformUser.scope !== 'platform') throw new Error('Invalid scope');
+    next();
+  } catch (_error) { return res.status(401).json({ error: 'Invalid or expired platform session.' }); }
+};
 const scoped = (sql, column = 'clinic_id') => `${sql} ${sql.toUpperCase().includes(' WHERE ') ? 'AND' : 'WHERE'} ${column} = ?`;
 
 const today = () => {
@@ -90,6 +103,36 @@ app.post('/api/auth/login', async (req, res) => {
   const token = jwt.sign({ sub: user.id, clinic_id: req.clinicId, role: user.role, name: user.name, email: user.email }, jwtSecret, { expiresIn: '12h' });
   res.json({ token, user: { name: user.name, email: user.email, role: user.role, clinic_id: req.clinicId } });
 });
+app.post('/api/platform/auth/login', async (req, res) => {
+  const email = req.body?.email?.trim().toLowerCase();
+  const password = req.body?.password || '';
+  const owner = email ? await db.prepare('SELECT id, name, email, password_hash FROM platform_admins WHERE email = ?').get(email) : null;
+  const passwordHash = owner ? crypto.scryptSync(password, email, 64).toString('hex') : '';
+  if (!owner || !crypto.timingSafeEqual(Buffer.from(passwordHash), Buffer.from(owner.password_hash))) return res.status(401).json({ error: 'Invalid platform email or password.' });
+  const token = jwt.sign({ sub: owner.id, scope: 'platform', name: owner.name, email: owner.email }, jwtSecret, { expiresIn: '12h' });
+  res.json({ token, user: { name: owner.name, email: owner.email } });
+});
+app.get('/api/platform/clinics', authenticatePlatform, async (_req, res) => {
+  const clinics = await db.prepare(`
+    SELECT c.id, c.name, c.status, c.created_at AS "createdAt",
+      (SELECT COUNT(*)::int FROM users u WHERE u.clinic_id = c.id) AS "staffCount",
+      (SELECT COUNT(*)::int FROM patients p WHERE p.clinic_id = c.id) AS "patientCount"
+    FROM clinics c ORDER BY c.created_at DESC
+  `).all();
+  res.json(clinics);
+});
+app.patch('/api/platform/clinics/:id/status', authenticatePlatform, async (req, res) => {
+  const status = req.body?.status;
+  if (!['active', 'inactive'].includes(status)) return res.status(400).json({ error: 'Status must be active or inactive.' });
+  const clinic = await db.prepare('UPDATE clinics SET status = ? WHERE id = ? RETURNING id, name, status').get(status, req.params.id);
+  if (!clinic) return res.status(404).json({ error: 'Clinic not found.' });
+  res.json(clinic);
+});
+app.delete('/api/platform/clinics/:id', authenticatePlatform, async (req, res) => {
+  const clinic = await db.prepare("UPDATE clinics SET status = 'inactive' WHERE id = ? RETURNING id, name, status").get(req.params.id);
+  if (!clinic) return res.status(404).json({ error: 'Clinic not found.' });
+  res.json({ ...clinic, message: 'Clinic deactivated. Data was retained.' });
+});
 app.get('/api/auth/me', authenticate, (req, res) => res.json({ user: req.user }));
 app.get('/api/summary', authenticate, allowRoles('receptionist', 'doctor', 'admin'), async (req, res) => res.json(await getSummary(req.clinicId)));
 app.get('/api/queue', authenticate, allowRoles('receptionist', 'doctor', 'admin'), async (req, res) => res.json(await getQueue(req.clinicId)));
@@ -122,7 +165,7 @@ const queueStatus = async (req, res) => {
 };
 app.get('/queue/status', queueStatus);
 app.get('/api/queue/status', queueStatus);
-const currentQueue = async (_req, res) => {
+const currentQueue = async (req, res) => {
   const current = await db.prepare("SELECT token FROM patients WHERE clinic_id = ? AND status = 'called' AND created_at::date = ? ORDER BY called_at DESC LIMIT 1").get(req.clinicId, today());
   res.json({ current_token: current?.token || null });
 };
