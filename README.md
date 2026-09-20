@@ -14,7 +14,13 @@ npm install
 npm start
 ```
 
-Open `http://localhost:3000` for patient registration. Staff views are available at `/receptionist.html` and `/doctor.html`.
+Open `http://localhost:3000` for patient registration. Staff sign in at `/login.html`; dashboards are selected from the account role.
+
+## Multi-clinic tenancy
+
+Every operational table carries a `clinic_id`. The service resolves it from the first subdomain label (`sunrise.example.com` -> `sunrise`) or from `/clinics/:clinicId` paths; localhost uses `CLINIC_ID` or `default`. All staff JWTs contain both `clinic_id` and `role`, and backend queries verify the token clinic before applying role permissions.
+
+Set `JWT_SECRET` in production. To bootstrap the first admin, set `ADMIN_EMAIL`, `ADMIN_PASSWORD`, and optionally `ADMIN_NAME` before the first start. Staff can then be added from `/admin.html`. Use separate clinic subdomains behind the same deployment, for example `sunrise.example.com` and `lakeside.example.com`.
 
 ## Routes
 

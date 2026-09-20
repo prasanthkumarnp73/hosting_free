@@ -1,5 +1,56 @@
 const json = { headers: { 'Content-Type': 'application/json' } };
-const api = async (url, options = {}) => { const response = await fetch(url, options); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Something went wrong'); return data; };
+const api = async (url, options = {}) => {
+  const headers = { ...json.headers, ...(options.headers || {}) };
+  const token = localStorage.getItem('clinicflowToken');
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const response = await fetch(url, { ...options, headers });
+  const data = await response.json();
+  if (response.status === 401 && document.body.classList.contains('dashboard-page')) {
+    window.location.href = '/login.html';
+    throw new Error('Your session has expired.');
+  }
+  if (!response.ok) throw new Error(data.error || 'Something went wrong');
+  return data;
+};
+
+const loginForm = document.querySelector('#login-form');
+if (loginForm) {
+  loginForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    const button = loginForm.querySelector('button');
+    button.disabled = true;
+    try {
+      const session = await api('/api/auth/login', { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(loginForm))) });
+      localStorage.setItem('clinicflowToken', session.token);
+      const destinations = { receptionist: '/receptionist.html', doctor: '/doctor.html', admin: '/admin.html' };
+      window.location.href = destinations[session.user.role] || '/';
+    } catch (error) {
+      document.querySelector('#login-error').textContent = error.message;
+      button.disabled = false;
+    }
+  });
+}
+
+if (document.body.classList.contains('dashboard-page') && !localStorage.getItem('clinicflowToken')) window.location.href = '/login.html';
+
+const logout = document.querySelector('#logout');
+if (logout) logout.addEventListener('click', () => { localStorage.removeItem('clinicflowToken'); window.location.href = '/login.html'; });
+
+async function refreshAdmin() {
+  if (!document.querySelector('.admin-view')) return;
+  const report = await api('/api/admin/reports');
+  document.querySelector('#report-waiting').textContent = report.waiting;
+  document.querySelector('#report-completed').textContent = report.completed;
+  document.querySelector('#report-consulting').textContent = report.inConsultation;
+  const staff = await api('/api/admin/staff');
+  document.querySelector('#staff-body').innerHTML = staff.map(member => `<tr><td>${escapeHtml(member.name)}</td><td>${escapeHtml(member.email)}</td><td>${escapeHtml(member.role)}</td></tr>`).join('');
+}
+const staffForm = document.querySelector('#staff-form');
+if (staffForm) staffForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  try { await api('/api/admin/staff', { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(staffForm))) }); staffForm.reset(); refreshAdmin(); } catch (error) { alert(error.message); }
+});
+if (document.querySelector('.admin-view')) { refreshAdmin(); setInterval(refreshAdmin, 15000); }
 
 const currentDateElement = document.querySelector('#current-date');
 if (currentDateElement) {
@@ -200,7 +251,8 @@ async function refreshDashboard() {
     document.querySelector('#doctor-current-token').textContent = summary.current ? `#${summary.current.token}` : '—';
     document.querySelector('#doctor-current-patient').textContent = summary.current ? summary.current.name : 'Waiting for reception';
     const statusLabels = { waiting: 'In Queue', late: 'Late', late_arrival: 'Late', called: 'Consultation In Progress', completed: 'Completed', no_show: 'No Show' };
-    document.querySelector('#activity-list').innerHTML = queue.map(patient => `<div class="activity-item"><span class="activity-token">#${patient.token}</span><div><strong>${escapeHtml(patient.name)}</strong><small>${escapeHtml(patient.notes || 'General consultation')} · checked in ${formatCheckedInTime(patient)}</small></div><span class="status ${patient.status}">${statusLabels[patient.status] || patient.status}</span></div>`).join('') || '<p class="muted">No activity yet today.</p>';
+    document.querySelector('#activity-list').innerHTML = queue.map(patient => `<div class="activity-item"><span class="activity-token">#${patient.token}</span><div><strong>${escapeHtml(patient.name)}</strong><small>${escapeHtml(patient.notes || 'General consultation')} · checked in ${formatCheckedInTime(patient)}</small><input class="doctor-note" data-note-id="${patient.id}" value="${escapeHtml(patient.notes || '')}" placeholder="Consultation note"><button class="action-link" data-save-note="${patient.id}">Save note</button></div><span class="status ${patient.status}">${statusLabels[patient.status] || patient.status}</span></div>`).join('') || '<p class="muted">No activity yet today.</p>';
+    document.querySelectorAll('[data-save-note]').forEach(button => button.addEventListener('click', async () => { const input = document.querySelector(`[data-note-id="${button.dataset.saveNote}"]`); await api(`/api/patients/${button.dataset.saveNote}/notes`, { method: 'PATCH', body: JSON.stringify({ notes: input.value }) }); refreshDashboard(); }));
     if (!document.querySelector('#qr-image').src) { const qr = await api('/api/qr'); document.querySelector('#qr-image').src = qr.dataUrl; }
   }
 }
