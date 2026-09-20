@@ -1,6 +1,40 @@
 const json = { headers: { 'Content-Type': 'application/json' } };
 const api = async (url, options = {}) => { const response = await fetch(url, options); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Something went wrong'); return data; };
 
+const currentDateElement = document.querySelector('#current-date');
+if (currentDateElement) {
+  const days = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+  const months = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
+
+  const updateCurrentDate = () => {
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2, '0');
+    currentDateElement.textContent = `${days[now.getDay()]}, ${day} ${months[now.getMonth()]} ${now.getFullYear()}`;
+
+    const nextMidnight = new Date(now);
+    nextMidnight.setHours(24, 0, 0, 0);
+    window.setTimeout(updateCurrentDate, nextMidnight.getTime() - now.getTime());
+  };
+
+  updateCurrentDate();
+}
+
+const currentGreetingElement = document.querySelector('#current-greeting');
+if (currentGreetingElement) {
+  const updateGreeting = () => {
+    const now = new Date();
+    const hour = now.getHours();
+    const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
+    currentGreetingElement.textContent = greeting;
+
+    const nextBoundary = new Date(now);
+    nextBoundary.setHours(hour < 12 ? 12 : hour < 17 ? 17 : 24, 0, 0, 0);
+    window.setTimeout(updateGreeting, nextBoundary.getTime() - now.getTime());
+  };
+
+  updateGreeting();
+}
+
 const phonePattern = /^(?:[0-9]{10}|\+91[0-9]{10})$/;
 const phoneInput = document.querySelector('#phone-input');
 if (phoneInput) {
