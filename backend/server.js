@@ -486,6 +486,11 @@ app.get('/webhook', (req, res) => {
   res.sendStatus(403);
 });
 
+app.get('/patient', (_req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'index.html')));
+app.get('/staff', (_req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'login.html')));
+app.get('/developer', (_req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'platform-login.html')));
+app.get('/start', (_req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'start.html')));
+
 async function sendDailyUpdate(label) {
   const summary = await getSummary(process.env.CLINIC_ID || 'default');
   await notifyDoctor(`Waiting now: ${summary.waiting}\nIn consultation: ${summary.inConsultation}\nBooked today: ${summary.booked}\nCompleted: ${summary.completed}`, label);

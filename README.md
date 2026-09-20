@@ -16,11 +16,32 @@ npm start
 
 Open `http://localhost:3000` for patient registration. Staff sign in at `/login.html`; dashboards are selected from the account role.
 
+## Simple user flow
+
+Use these named URLs so nobody has to remember internal page names:
+
+```text
+/patient     Patient registration and token tracking
+/staff       One staff login for receptionist, doctor, or clinic admin
+/developer   Private platform-owner login and clinic management
+/start       Optional chooser page linking to all three
+```
+
+After staff sign-in, the account role decides the destination automatically:
+
+```text
+receptionist -> /receptionist.html
+doctor       -> /doctor.html
+admin        -> /admin.html
+```
+
+Patients never use staff or developer login. Clinic staff never use the developer portal. The developer portal is only for the application owner and manages all clinics; clinic admin manages only their own clinic.
+
 ## Multi-clinic tenancy
 
 Every operational table carries a `clinic_id`. The service resolves it from the first subdomain label (`sunrise.example.com` -> `sunrise`) or from `/clinics/:clinicId` paths; localhost uses `CLINIC_ID` or `default`. All staff JWTs contain both `clinic_id` and `role`, and backend queries verify the token clinic before applying role permissions.
 
-Set `JWT_SECRET` in production. To bootstrap the first admin, set `ADMIN_EMAIL`, `ADMIN_PASSWORD`, and optionally `ADMIN_NAME` before the first start. Staff can then be added from `/admin.html`. Use separate clinic subdomains behind the same deployment, for example `sunrise.example.com` and `lakeside.example.com`.
+Set `JWT_SECRET` in production. To bootstrap the first clinic admin, set `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_PHONE`, and optionally `ADMIN_NAME` before the first start. Staff can then be added from `/admin.html`. Use separate clinic subdomains behind the same deployment, for example `sunrise.example.com` and `lakeside.example.com`.
 
 The developer portal is separate from clinic administration. Set `PLATFORM_ADMIN_EMAIL`, `PLATFORM_ADMIN_PASSWORD`, and optionally `PLATFORM_ADMIN_NAME` in the hosting environment, then open `/platform-login.html`. After signing in, `/platform.html` lists every clinic with staff and patient counts. Deactivating a clinic blocks its users and patient registration while retaining data; it can be reactivated from the same portal.
 

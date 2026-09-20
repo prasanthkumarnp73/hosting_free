@@ -232,6 +232,17 @@ td:first-child { color: var(--orange); font-weight: 700; }
   box-shadow: 0 24px 70px rgba(37, 83, 62, .13), 0 2px 8px rgba(37, 83, 62, .05);
   backdrop-filter: blur(14px);
 }
+.start-shell { max-width: 1080px; display: block; padding-top: 76px; }
+.start-shell h1 { max-width: 760px; margin: 10px 0 8px; color: #17211b; font-family: 'Poppins', sans-serif; font-size: clamp(34px, 5vw, 62px); line-height: 1.08; letter-spacing: -1.8px; }
+.start-lead { margin: 0 0 32px; font-size: 16px; }
+.start-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.start-option { min-height: 250px; padding: 26px; border: 1px solid rgba(43, 122, 85, .15); border-radius: 18px; background: rgba(255, 255, 255, .82); box-shadow: 0 18px 40px rgba(37, 83, 62, .08); color: #17211b; transition: transform .2s, box-shadow .2s, border-color .2s; }
+.start-option:hover { transform: translateY(-4px); border-color: rgba(43, 122, 85, .42); box-shadow: 0 24px 48px rgba(37, 83, 62, .14); }
+.start-number { color: var(--green); font-size: 12px; font-weight: 700; letter-spacing: 1.5px; }
+.start-option h2 { margin: 32px 0 8px; font-family: 'Poppins', sans-serif; font-size: 25px; }
+.start-option p { min-height: 48px; margin: 0 0 22px; color: #52675e; line-height: 1.55; }
+.start-option strong { color: var(--green); font-size: 13px; }
+@media (max-width: 760px) { .start-grid { grid-template-columns: 1fr; } .start-option { min-height: auto; } .start-option h2 { margin-top: 18px; } }
 .patient-page .card-heading { padding-bottom: 25px; border-bottom-color: rgba(43, 122, 85, .14); }
 .patient-page .card-heading h2 {
   max-width: 520px;
