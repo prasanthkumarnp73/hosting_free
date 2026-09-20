@@ -4,7 +4,6 @@ const express = require('express');
 const cron = require('node-cron');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const twilio = require('twilio');
 let db;
 const { generateClinicQr } = require('./utils/qr');
 const { sendWhatsAppMessage, notifyDoctor, patientConfirmation, isConfigured } = require('./utils/whatsapp');
@@ -13,7 +12,6 @@ const app = express();
 const port = process.env.PORT || 3000;
 const clinicUrl = process.env.CLINIC_URL || `http://localhost:${port}`;
 const jwtSecret = process.env.JWT_SECRET || 'clinicflow-development-secret';
-const twilioClient = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN) : null;
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'frontend')));
 const databaseReady = require('./db').then(database => {
@@ -79,14 +77,17 @@ const normalizeLoginPhone = phone => {
   return null;
 };
 const hashOtp = (phone, code) => crypto.createHash('sha256').update(`${phone}:${code}:${jwtSecret}`).digest('hex');
-async function sendLoginOtp(phone, code) {
-  const body = `Your ClinicFlow login code is ${code}. It expires in 5 minutes. Do not share this code.`;
-  if (twilioClient && process.env.TWILIO_PHONE_NUMBER) {
-    await twilioClient.messages.create({ body, from: process.env.TWILIO_PHONE_NUMBER, to: phone });
-    return 'sms';
-  }
-  console.log(`[OTP DEMO] Login code for ${phone}: ${code}`);
-  return 'demo';
+async function sendLoginOtp(clinicId, phone, code) {
+  const clinic = await db.prepare('SELECT smsgate_endpoint AS "smsgateEndpoint" FROM clinics WHERE id = ?').get(clinicId);
+  const endpoint = clinic?.smsgateEndpoint || process.env.SMSGATE_API_URL;
+  if (!endpoint) throw new Error('SMSGATE_API_URL is not configured for this clinic.');
+  const response = await fetch(endpoint.replace(/\/$/, '') + '/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone, message: `Your ClinicFlow OTP is ${code}. It expires in 5 minutes. Do not share it.` })
+  });
+  if (!response.ok) throw new Error(`SMSGate returned HTTP ${response.status}.`);
+  return 'smsgate';
 }
 function signClinicUser(user, clinicId) {
   const token = jwt.sign({ sub: user.id, clinic_id: clinicId, role: user.role, name: user.name, email: user.email }, jwtSecret, { expiresIn: '12h' });
@@ -122,11 +123,17 @@ async function recordHistory(clinicId, patientId, appointmentId, fromStatus, toS
 }
 
 async function createOtp(scope, clinicId, phone) {
+  const recent = await db.prepare("SELECT COUNT(*)::int AS count FROM login_otps WHERE scope = ? AND clinic_id IS NOT DISTINCT FROM ? AND phone = ? AND created_at > NOW() - INTERVAL '1 hour'").get(scope, clinicId, phone);
+  if (recent.count >= 3) throw new Error('OTP request limit reached. Try again later.');
   const code = String(crypto.randomInt(100000, 1000000));
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
   await db.prepare("UPDATE login_otps SET used_at = ? WHERE scope = ? AND clinic_id IS NOT DISTINCT FROM ? AND phone = ? AND used_at IS NULL").run(timeNow(), scope, clinicId, phone);
-  await db.prepare('INSERT INTO login_otps (scope, clinic_id, phone, code_hash, expires_at) VALUES (?, ?, ?, ?, ?)').run(scope, clinicId, phone, hashOtp(phone, code), expiresAt);
-  return sendLoginOtp(phone, code);
+  const codeHash = hashOtp(phone, code);
+  await db.prepare('INSERT INTO login_otps (scope, clinic_id, phone, phone_number, code_hash, otp_code, expires_at, expiry_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(scope, clinicId, phone, phone, codeHash, codeHash, expiresAt, expiresAt);
+  try { return await sendLoginOtp(clinicId, phone, code); } catch (error) {
+    await db.prepare('UPDATE login_otps SET used_at = ? WHERE scope = ? AND clinic_id IS NOT DISTINCT FROM ? AND phone = ? AND used_at IS NULL').run(timeNow(), scope, clinicId, phone);
+    throw error;
+  }
 }
 
 async function consumeOtp(scope, clinicId, phone, code) {
@@ -143,8 +150,8 @@ app.post('/api/auth/otp/request', async (req, res) => {
   if (!phone) return res.status(400).json({ error: 'Enter a valid 10-digit mobile number.' });
   const user = await db.prepare('SELECT id FROM users WHERE clinic_id = ? AND phone = ?').get(req.clinicId, phone);
   if (!user) return res.status(202).json({ message: 'If this mobile number belongs to a clinic account, an OTP has been sent.' });
-  const delivery = await createOtp('clinic', req.clinicId, phone);
-  res.json({ message: delivery === 'sms' ? 'OTP sent to your mobile number.' : 'Demo OTP generated. Check the server log.', demo: delivery === 'demo' });
+  try { await createOtp('clinic', req.clinicId, phone); res.json({ message: 'OTP sent through the clinic SMSGate device.' }); }
+  catch (error) { res.status(error.message.includes('limit') ? 429 : 503).json({ error: error.message }); }
 });
 app.post('/api/auth/otp/verify', async (req, res) => {
   const phone = normalizeLoginPhone(req.body?.phone);
@@ -154,6 +161,42 @@ app.post('/api/auth/otp/verify', async (req, res) => {
   const user = await db.prepare('SELECT id, name, email, role FROM users WHERE clinic_id = ? AND phone = ?').get(req.clinicId, phone);
   if (!user) return res.status(401).json({ error: 'Clinic account not found.' });
   res.json(signClinicUser(user, req.clinicId));
+});
+app.post('/auth/send-otp', async (req, res) => {
+  const phone = normalizeLoginPhone(req.body?.phone);
+  if (!phone) return res.status(400).json({ error: 'Enter a valid 10-digit mobile number.' });
+  const user = await db.prepare('SELECT id FROM users WHERE clinic_id = ? AND phone = ?').get(req.clinicId, phone);
+  if (!user) return res.status(202).json({ message: 'If this mobile number belongs to a clinic account, an OTP has been sent.' });
+  try { await createOtp('clinic', req.clinicId, phone); res.json({ message: 'OTP sent through the clinic SMSGate device.' }); }
+  catch (error) { res.status(error.message.includes('limit') ? 429 : 503).json({ error: error.message }); }
+});
+app.post('/auth/verify-otp', async (req, res) => {
+  const phone = normalizeLoginPhone(req.body?.phone);
+  const code = String(req.body?.otp_code || req.body?.code || '').trim();
+  if (!phone || !/^\d{6}$/.test(code)) return res.status(400).json({ error: 'Enter a valid mobile number and 6-digit OTP.' });
+  if (!await consumeOtp('clinic', req.clinicId, phone, code)) return res.status(401).json({ error: 'Invalid or expired OTP.' });
+  const user = await db.prepare('SELECT id, name, email, role FROM users WHERE clinic_id = ? AND phone = ?').get(req.clinicId, phone);
+  if (!user) return res.status(401).json({ error: 'Clinic account not found.' });
+  res.json(signClinicUser(user, req.clinicId));
+});
+
+app.post('/api/patient/auth/otp/request', async (req, res) => {
+  const phone = normalizeLoginPhone(req.body?.phone);
+  if (!phone) return res.status(400).json({ error: 'Enter a valid 10-digit mobile number.' });
+  const patient = await db.prepare('SELECT id FROM patients WHERE clinic_id = ? AND phone = ? ORDER BY created_at DESC LIMIT 1').get(req.clinicId, phone);
+  if (!patient) return res.status(202).json({ message: 'If this mobile number belongs to a patient, an OTP has been sent.' });
+  try { await createOtp('patient', req.clinicId, phone); res.json({ message: 'OTP sent through the clinic SMSGate device.' }); }
+  catch (error) { res.status(error.message.includes('limit') ? 429 : 503).json({ error: error.message }); }
+});
+app.post('/api/patient/auth/otp/verify', async (req, res) => {
+  const phone = normalizeLoginPhone(req.body?.phone);
+  const code = String(req.body?.otp_code || req.body?.code || '').trim();
+  if (!phone || !/^\d{6}$/.test(code)) return res.status(400).json({ error: 'Enter a valid mobile number and 6-digit OTP.' });
+  if (!await consumeOtp('patient', req.clinicId, phone, code)) return res.status(401).json({ error: 'Invalid or expired OTP.' });
+  const patient = await db.prepare('SELECT id, name, phone FROM patients WHERE clinic_id = ? AND phone = ? ORDER BY created_at DESC LIMIT 1').get(req.clinicId, phone);
+  if (!patient) return res.status(401).json({ error: 'Patient account not found.' });
+  const token = jwt.sign({ sub: patient.id, clinic_id: req.clinicId, role: 'patient', name: patient.name, phone: patient.phone }, jwtSecret, { expiresIn: '12h' });
+  res.json({ token, user: { id: patient.id, name: patient.name, role: 'patient', clinic_id: req.clinicId } });
 });
 
 app.post('/api/auth/login', async (req, res) => {
@@ -183,8 +226,8 @@ app.post('/api/platform/auth/otp/request', async (req, res) => {
   if (!phone) return res.status(400).json({ error: 'Enter a valid 10-digit mobile number.' });
   const owner = await db.prepare('SELECT id FROM platform_admins WHERE phone = ?').get(phone);
   if (!owner) return res.status(202).json({ message: 'If this mobile number belongs to the platform owner, an OTP has been sent.' });
-  const delivery = await createOtp('platform', null, phone);
-  res.json({ message: delivery === 'sms' ? 'OTP sent to your mobile number.' : 'Demo OTP generated. Check the server log.', demo: delivery === 'demo' });
+  try { await createOtp('platform', null, phone); res.json({ message: 'OTP sent through the configured SMSGate device.' }); }
+  catch (error) { res.status(error.message.includes('limit') ? 429 : 503).json({ error: error.message }); }
 });
 app.post('/api/platform/auth/otp/verify', async (req, res) => {
   const phone = normalizeLoginPhone(req.body?.phone);
@@ -197,7 +240,7 @@ app.post('/api/platform/auth/otp/verify', async (req, res) => {
 });
 app.get('/api/platform/clinics', authenticatePlatform, async (_req, res) => {
   const clinics = await db.prepare(`
-    SELECT c.id, c.name, c.status, c.created_at AS "createdAt",
+    SELECT c.id, c.name, c.status, c.smsgate_endpoint AS "smsgateEndpoint", c.created_at AS "createdAt",
       (SELECT COUNT(*)::int FROM users u WHERE u.clinic_id = c.id) AS "staffCount",
       (SELECT COUNT(*)::int FROM patients p WHERE p.clinic_id = c.id) AS "patientCount"
     FROM clinics c ORDER BY c.created_at DESC
@@ -246,6 +289,13 @@ app.patch('/api/platform/clinics/:id/status', authenticatePlatform, async (req, 
   const status = req.body?.status;
   if (!['active', 'inactive'].includes(status)) return res.status(400).json({ error: 'Status must be active or inactive.' });
   const clinic = await db.prepare('UPDATE clinics SET status = ? WHERE id = ? RETURNING id, name, status').get(status, req.params.id);
+  if (!clinic) return res.status(404).json({ error: 'Clinic not found.' });
+  res.json(clinic);
+});
+app.patch('/api/platform/clinics/:id/smsgate', authenticatePlatform, async (req, res) => {
+  const endpoint = String(req.body?.endpoint || '').trim();
+  if (endpoint && !/^https?:\/\//i.test(endpoint)) return res.status(400).json({ error: 'SMSGate endpoint must start with http:// or https://.' });
+  const clinic = await db.prepare('UPDATE clinics SET smsgate_endpoint = ? WHERE id = ? RETURNING id, name, smsgate_endpoint AS "smsgateEndpoint"').get(endpoint || null, req.params.id);
   if (!clinic) return res.status(404).json({ error: 'Clinic not found.' });
   res.json(clinic);
 });

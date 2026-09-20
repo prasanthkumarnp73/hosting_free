@@ -47,6 +47,7 @@ async function initializeDatabase() {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
+      smsgate_endpoint TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS platform_admins (
@@ -70,7 +71,7 @@ async function initializeDatabase() {
     );
     CREATE TABLE IF NOT EXISTS login_otps (
       id SERIAL PRIMARY KEY,
-      scope TEXT NOT NULL CHECK (scope IN ('clinic', 'platform')),
+      scope TEXT NOT NULL CHECK (scope IN ('clinic', 'patient', 'platform')),
       clinic_id TEXT,
       phone TEXT NOT NULL,
       code_hash TEXT NOT NULL,
@@ -137,9 +138,18 @@ async function initializeDatabase() {
   `);
   await query("INSERT INTO clinics (id, name) VALUES (?, ?) ON CONFLICT (id) DO NOTHING", [clinicId, clinicName]);
   await query("ALTER TABLE clinics ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'");
+  await query("ALTER TABLE clinics ADD COLUMN IF NOT EXISTS smsgate_endpoint TEXT");
   await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT");
   await query("ALTER TABLE platform_admins ADD COLUMN IF NOT EXISTS phone TEXT");
   await query("CREATE INDEX IF NOT EXISTS login_otps_lookup_idx ON login_otps (scope, clinic_id, phone, expires_at)");
+  await query("ALTER TABLE login_otps ADD COLUMN IF NOT EXISTS phone_number TEXT");
+  await query("ALTER TABLE login_otps ADD COLUMN IF NOT EXISTS otp_code TEXT");
+  await query("ALTER TABLE login_otps ADD COLUMN IF NOT EXISTS expiry_time TIMESTAMPTZ");
+  await query("ALTER TABLE login_otps DROP CONSTRAINT IF EXISTS login_otps_scope_check");
+  await query("ALTER TABLE login_otps ADD CONSTRAINT login_otps_scope_check CHECK (scope IN ('clinic', 'patient', 'platform'))");
+  await query("UPDATE login_otps SET phone_number = phone WHERE phone_number IS NULL");
+  await query("UPDATE login_otps SET otp_code = code_hash WHERE otp_code IS NULL");
+  await query("UPDATE login_otps SET expiry_time = expires_at WHERE expiry_time IS NULL");
   await query("CREATE INDEX IF NOT EXISTS clinics_status_idx ON clinics (status)");
   await query("ALTER TABLE doctors ADD COLUMN IF NOT EXISTS clinic_id TEXT NOT NULL DEFAULT 'default'");
   await query("ALTER TABLE patients ADD COLUMN IF NOT EXISTS clinic_id TEXT NOT NULL DEFAULT 'default'");

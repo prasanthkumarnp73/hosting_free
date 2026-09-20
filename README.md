@@ -26,7 +26,9 @@ The developer portal is separate from clinic administration. Set `PLATFORM_ADMIN
 
 Staff recovery is available from `/login.html`. The request appears in the developer portal under “Account recovery requests”. The platform owner verifies the clinic and identity, issues a temporary password, and gives it to the staff member securely. Existing passwords are never displayed. Receptionists must use a receptionist account, doctors a doctor account, and clinic admins the admin account; opening the wrong dashboard now redirects to the correct one.
 
-OTP login uses the registered mobile number. Set `ADMIN_PHONE` and `PLATFORM_ADMIN_PHONE` for the bootstrap accounts. For real SMS delivery on Render, also set `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_PHONE_NUMBER`. Without Twilio variables, OTPs are printed in the server log as demo codes and are not sent to a phone. Staff phone numbers are entered when an admin creates their account.
+OTP login uses the registered mobile number. Set `ADMIN_PHONE` and `PLATFORM_ADMIN_PHONE` for the bootstrap accounts. Staff phone numbers are entered when an admin creates their account.
+
+OTP delivery now uses SMSGate. Set `SMSGATE_API_URL` as a global fallback, or configure each clinic with its SMSGate base URL (for example `http://192.168.1.50:8080`) through the platform clinic configuration API. The backend app must be able to reach the clinic Android device; a private phone IP usually requires a VPN, tunnel, or public HTTPS gateway when the backend is hosted on Render. The SMSGate endpoint receives `POST <base-url>/send` with `{ "phone": "+91XXXXXXXXXX", "message": "..." }`.
 
 ## Routes
 
