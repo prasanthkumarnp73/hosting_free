@@ -70,7 +70,7 @@ nav a.active { color: var(--ink); border-color: var(--orange); }
 .dashboard-shell { max-width: 1220px; margin: 0 auto; padding: 58px 32px; }
 .page-intro { display: flex; align-items: end; justify-content: space-between; margin-bottom: 42px; }
 .page-intro h1 { margin: 0 0 8px; font: 500 42px/1 Fraunces, serif; letter-spacing: -1.5px; }
-.consultation-status { margin: 14px 0 0; color: var(--green); font-size: 18px; font-weight: 700; text-align: center; }
+.consultation-status { margin: 14px 0 0; color: var(--green); font-size: 18px; font-weight: 700; text-align: left; }
 .muted { margin: 0; color: var(--muted); line-height: 1.5; }
 .reception-actions { display: flex; align-items: center; gap: 18px; }
 .current-token { min-width: 142px; padding: 12px 16px; border: 1px solid #f1d4c5; border-radius: 8px; background: #fff7f2; }
