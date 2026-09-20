@@ -127,6 +127,22 @@ app.get('/api/platform/clinics', authenticatePlatform, async (_req, res) => {
   `).all();
   res.json(clinics);
 });
+app.get('/api/platform/staff', authenticatePlatform, async (_req, res) => {
+  res.json(await db.prepare(`
+    SELECT u.id, u.clinic_id AS "clinicId", c.name AS "clinicName", u.name, u.email, u.phone, u.role, u.created_at AS "createdAt"
+    FROM users u JOIN clinics c ON c.id = u.clinic_id
+    ORDER BY c.name, u.role, u.name
+  `).all());
+});
+app.post('/api/platform/staff/:id/reset-password', authenticatePlatform, async (req, res) => {
+  const temporaryPassword = String(req.body?.temporaryPassword || '').trim();
+  if (temporaryPassword.length < 8) return res.status(400).json({ error: 'Temporary password must contain at least 8 characters.' });
+  const user = await db.prepare('SELECT id, clinic_id, email FROM users WHERE id = ?').get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'Staff user not found.' });
+  const passwordHash = crypto.scryptSync(temporaryPassword, user.email, 64).toString('hex');
+  await db.prepare('UPDATE users SET password_hash = ? WHERE id = ? AND clinic_id = ?').run(passwordHash, user.id, user.clinic_id);
+  res.json({ success: true, loginEmail: user.email, temporaryPassword, message: 'Password reset. Give the temporary password securely to the verified staff member.' });
+});
 app.get('/api/platform/recovery-requests', authenticatePlatform, async (_req, res) => {
   res.json(await db.prepare(`SELECT r.id, r.clinic_id AS "clinicId", c.name AS "clinicName", r.name, r.email, r.phone, r.requested_role AS role, r.status, r.created_at AS "createdAt" FROM account_recovery_requests r JOIN clinics c ON c.id = r.clinic_id WHERE r.status = 'pending' ORDER BY r.created_at DESC`).all());
 });
