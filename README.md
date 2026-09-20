@@ -25,6 +25,7 @@ Use these named URLs so nobody has to remember internal page names:
 /staff       One staff login for receptionist, doctor, or clinic admin
 /developer   Private platform-owner login and clinic management
 /start       Optional chooser page linking to all three
+/admin/add-clinic  Platform-owner clinic onboarding form
 ```
 
 After staff sign-in, the account role decides the destination automatically:
@@ -36,6 +37,8 @@ admin        -> /admin.html
 ```
 
 Patients never use staff or developer login. Clinic staff never use the developer portal. The developer portal is only for the application owner and manages all clinics; clinic admin manages only their own clinic.
+
+Platform onboarding: sign in at `/developer`, choose **Add clinic**, enter the clinic name, lowercase subdomain, admin username, and strong password. The backend creates the clinic, admin user, and default doctor in one transaction. The new clinic admin signs in through `/staff`; the password is stored as a bcrypt hash and is never returned by the API.
 
 ## Multi-clinic tenancy
 

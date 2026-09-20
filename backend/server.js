@@ -4,6 +4,7 @@ const express = require('express');
 const cron = require('node-cron');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 let db;
 const { generateClinicQr } = require('./utils/qr');
 const { sendWhatsAppMessage, notifyDoctor, patientConfirmation, isConfigured } = require('./utils/whatsapp');
@@ -237,6 +238,33 @@ app.post('/api/platform/auth/otp/verify', async (req, res) => {
   const owner = await db.prepare('SELECT id, name, email FROM platform_admins WHERE phone = ?').get(phone);
   if (!owner) return res.status(401).json({ error: 'Platform account not found.' });
   res.json(signPlatformUser(owner));
+});
+app.post('/api/admin/add-clinic', authenticatePlatform, async (req, res) => {
+  const clinicName = String(req.body?.clinicName || '').trim();
+  const subdomain = String(req.body?.subdomain || '').trim().toLowerCase();
+  const username = String(req.body?.adminUsername || '').trim().toLowerCase();
+  const password = String(req.body?.adminPassword || '');
+  if (clinicName.length < 2 || clinicName.length > 120) return res.status(400).json({ error: 'Clinic name must be between 2 and 120 characters.' });
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(subdomain)) return res.status(400).json({ error: 'Subdomain may contain lowercase letters, numbers, and hyphens only.' });
+  if (!/^[a-z0-9._-]{3,80}$/.test(username)) return res.status(400).json({ error: 'Admin username must be 3-80 characters and use letters, numbers, dot, underscore, or hyphen.' });
+  if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{10,}$/.test(password)) return res.status(400).json({ error: 'Admin password must be at least 10 characters with uppercase, lowercase, number, and symbol.' });
+  const clinicId = subdomain;
+  const adminEmail = username.includes('@') ? username : `${username}@${subdomain}.clinicflow.local`;
+  const passwordHash = await bcrypt.hash(password, 12);
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const clinicResult = await client.query('INSERT INTO clinics (id, name, subdomain, status) VALUES ($1, $2, $3, \'active\') RETURNING id, name, subdomain', [clinicId, clinicName, subdomain]);
+    await client.query('INSERT INTO users (clinic_id, name, username, email, password_hash, role) VALUES ($1, $2, $3, $4, $5, \'admin\')', [clinicId, `${clinicName} Admin`, username, adminEmail, passwordHash]);
+    await client.query("INSERT INTO doctors (clinic_id, name, specialty) VALUES ($1, 'Clinic doctor', 'General medicine')", [clinicId]);
+    await client.query('COMMIT');
+    res.status(201).json({ message: `${clinicName} onboarded successfully.`, clinic: clinicResult.rows[0], admin: { username, email: adminEmail, role: 'admin' } });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    if (error.code === '23505') return res.status(409).json({ error: 'Clinic name, subdomain, or admin username is already in use.' });
+    console.error('Clinic onboarding failed:', error);
+    res.status(500).json({ error: 'Could not onboard clinic.' });
+  } finally { client.release(); }
 });
 app.get('/api/platform/clinics', authenticatePlatform, async (_req, res) => {
   const clinics = await db.prepare(`
@@ -489,6 +517,7 @@ app.get('/webhook', (req, res) => {
 app.get('/patient', (_req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'index.html')));
 app.get('/staff', (_req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'login.html')));
 app.get('/developer', (_req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'platform-login.html')));
+app.get('/admin/add-clinic', (_req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'admin-add-clinic.html')));
 app.get('/start', (_req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'start.html')));
 
 async function sendDailyUpdate(label) {

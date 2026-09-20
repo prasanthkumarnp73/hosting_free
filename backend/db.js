@@ -46,6 +46,7 @@ async function initializeDatabase() {
     CREATE TABLE IF NOT EXISTS clinics (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
+      subdomain TEXT UNIQUE,
       status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
       smsgate_endpoint TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -62,6 +63,7 @@ async function initializeDatabase() {
       id SERIAL PRIMARY KEY,
       clinic_id TEXT NOT NULL DEFAULT 'default',
       name TEXT NOT NULL,
+      username TEXT,
       email TEXT NOT NULL,
       phone TEXT,
       password_hash TEXT NOT NULL,
@@ -139,7 +141,12 @@ async function initializeDatabase() {
   await query("INSERT INTO clinics (id, name) VALUES (?, ?) ON CONFLICT (id) DO NOTHING", [clinicId, clinicName]);
   await query("ALTER TABLE clinics ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'");
   await query("ALTER TABLE clinics ADD COLUMN IF NOT EXISTS smsgate_endpoint TEXT");
+  await query("ALTER TABLE clinics ADD COLUMN IF NOT EXISTS subdomain TEXT");
   await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT");
+  await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT");
+  await query("CREATE UNIQUE INDEX IF NOT EXISTS clinics_name_lower_idx ON clinics (LOWER(name))");
+  await query("CREATE UNIQUE INDEX IF NOT EXISTS clinics_subdomain_idx ON clinics (subdomain) WHERE subdomain IS NOT NULL");
+  await query("CREATE UNIQUE INDEX IF NOT EXISTS users_clinic_username_idx ON users (clinic_id, username) WHERE username IS NOT NULL");
   await query("ALTER TABLE platform_admins ADD COLUMN IF NOT EXISTS phone TEXT");
   await query("CREATE INDEX IF NOT EXISTS login_otps_lookup_idx ON login_otps (scope, clinic_id, phone, expires_at)");
   await query("ALTER TABLE login_otps ADD COLUMN IF NOT EXISTS phone_number TEXT");
