@@ -135,12 +135,19 @@ app.post('/api/platform/recovery-requests/:id/resolve', authenticatePlatform, as
   if (temporaryPassword.length < 8) return res.status(400).json({ error: 'Temporary password must contain at least 8 characters.' });
   const request = await db.prepare("SELECT id, clinic_id, email, phone, requested_role FROM account_recovery_requests WHERE id = ? AND status = 'pending'").get(req.params.id);
   if (!request) return res.status(404).json({ error: 'Recovery request not found or already resolved.' });
-  const user = await db.prepare('SELECT id, email FROM users WHERE clinic_id = ? AND role = ? AND ((email = ? AND ? IS NOT NULL) OR (phone = ? AND ? IS NOT NULL))').get(request.clinic_id, request.requested_role, request.email, request.email, request.phone, request.phone);
+  const user = request.email
+    ? await db.prepare('SELECT id, email FROM users WHERE clinic_id = ? AND role = ? AND email = ?').get(request.clinic_id, request.requested_role, request.email)
+    : await db.prepare('SELECT id, email FROM users WHERE clinic_id = ? AND role = ? AND phone = ?').get(request.clinic_id, request.requested_role, request.phone);
   if (!user) return res.status(404).json({ error: 'No matching clinic user was found. Check the clinic, email, phone, and role.' });
   const passwordHash = crypto.scryptSync(temporaryPassword, user.email, 64).toString('hex');
-  await db.prepare('UPDATE users SET password_hash = ? WHERE id = ? AND clinic_id = ?').run(passwordHash, user.id, request.clinic_id);
-  await db.prepare("UPDATE account_recovery_requests SET status = 'resolved', temporary_password_hash = ?, resolved_at = ? WHERE id = ?").run(passwordHash, timeNow(), request.id);
-  res.json({ success: true, loginEmail: user.email, temporaryPassword, message: 'Password reset. Give the temporary password to the verified staff member securely.' });
+  try {
+    await db.prepare('UPDATE users SET password_hash = ? WHERE id = ? AND clinic_id = ?').run(passwordHash, user.id, request.clinic_id);
+    await db.prepare("UPDATE account_recovery_requests SET status = 'resolved', temporary_password_hash = ?, resolved_at = ? WHERE id = ?").run(passwordHash, timeNow(), request.id);
+    res.json({ success: true, loginEmail: user.email, temporaryPassword, message: 'Password reset. Give the temporary password to the verified staff member securely.' });
+  } catch (error) {
+    console.error('Recovery resolution failed:', error);
+    res.status(500).json({ error: 'Could not reset the password. Check the deployment database migration and try again.' });
+  }
 });
 app.patch('/api/platform/clinics/:id/status', authenticatePlatform, async (req, res) => {
   const status = req.body?.status;
