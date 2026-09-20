@@ -185,12 +185,14 @@ td:first-child { color: var(--orange); font-weight: 700; }
 }
 .patient-page .brand { gap: 12px; font-family: 'Poppins', sans-serif; font-size: 18px; letter-spacing: -.3px; }
 .patient-page .brand-mark {
-  width: 42px;
-  height: 42px;
+  width: 52px;
+  height: 52px;
   border-radius: 12px;
-  background: linear-gradient(145deg, #39a875, #216b4c);
-  box-shadow: 0 8px 18px rgba(43, 122, 85, .25);
-  font-size: 32px;
+  background: #c62828;
+  box-shadow: 0 8px 18px rgba(198, 40, 40, .24);
+  color: #fff;
+  font-size: 38px;
+  font-weight: 700;
   line-height: 1;
 }
 .patient-page .patient-shell { max-width: 760px; min-height: calc(100vh - 148px); padding: 58px 24px; }
@@ -293,7 +295,7 @@ td:first-child { color: var(--orange); font-weight: 700; }
 @media (max-width: 480px) {
   .patient-page .topbar { height: 76px; padding: 0 18px; }
   .patient-page .brand { font-size: 15px; }
-  .patient-page .brand-mark { width: 38px; height: 38px; font-size: 29px; }
+  .patient-page .brand-mark { width: 44px; height: 44px; font-size: 32px; }
   .patient-page .patient-shell { padding: 34px 16px; }
   .patient-page .public-queue { padding: 14px 16px; }
   .patient-page .public-queue strong { font-size: 25px; }
