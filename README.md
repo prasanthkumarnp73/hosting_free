@@ -24,6 +24,8 @@ Set `JWT_SECRET` in production. To bootstrap the first admin, set `ADMIN_EMAIL`,
 
 The developer portal is separate from clinic administration. Set `PLATFORM_ADMIN_EMAIL`, `PLATFORM_ADMIN_PASSWORD`, and optionally `PLATFORM_ADMIN_NAME` in the hosting environment, then open `/platform-login.html`. After signing in, `/platform.html` lists every clinic with staff and patient counts. Deactivating a clinic blocks its users and patient registration while retaining data; it can be reactivated from the same portal.
 
+Staff recovery is available from `/login.html`. The request appears in the developer portal under “Account recovery requests”. The platform owner verifies the clinic and identity, issues a temporary password, and gives it to the staff member securely. Existing passwords are never displayed. Receptionists must use a receptionist account, doctors a doctor account, and clinic admins the admin account; opening the wrong dashboard now redirects to the correct one.
+
 ## Routes
 
 - `POST /register` creates a patient, daily token, appointment, and confirmation message.

@@ -60,10 +60,23 @@ async function initializeDatabase() {
       clinic_id TEXT NOT NULL DEFAULT 'default',
       name TEXT NOT NULL,
       email TEXT NOT NULL,
+      phone TEXT,
       password_hash TEXT NOT NULL,
       role user_role NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE (clinic_id, email)
+    );
+    CREATE TABLE IF NOT EXISTS account_recovery_requests (
+      id SERIAL PRIMARY KEY,
+      clinic_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      email TEXT,
+      phone TEXT,
+      requested_role user_role NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'resolved', 'rejected')),
+      temporary_password_hash TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      resolved_at TIMESTAMPTZ
     );
     CREATE TABLE IF NOT EXISTS doctors (
       id SERIAL PRIMARY KEY,
@@ -111,6 +124,7 @@ async function initializeDatabase() {
   `);
   await query("INSERT INTO clinics (id, name) VALUES (?, ?) ON CONFLICT (id) DO NOTHING", [clinicId, clinicName]);
   await query("ALTER TABLE clinics ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'");
+  await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT");
   await query("CREATE INDEX IF NOT EXISTS clinics_status_idx ON clinics (status)");
   await query("ALTER TABLE doctors ADD COLUMN IF NOT EXISTS clinic_id TEXT NOT NULL DEFAULT 'default'");
   await query("ALTER TABLE patients ADD COLUMN IF NOT EXISTS clinic_id TEXT NOT NULL DEFAULT 'default'");

@@ -31,7 +31,27 @@ if (loginForm) {
   });
 }
 
-if (document.body.classList.contains('dashboard-page') && !localStorage.getItem('clinicflowToken')) window.location.href = '/login.html';
+const showRecovery = document.querySelector('#show-recovery');
+const recoveryForm = document.querySelector('#recovery-form');
+if (showRecovery && recoveryForm) showRecovery.addEventListener('click', event => { event.preventDefault(); recoveryForm.classList.toggle('hidden'); });
+if (recoveryForm) recoveryForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  const formData = Object.fromEntries(new FormData(recoveryForm));
+  if (!formData.email && !formData.phone) { document.querySelector('#recovery-message').textContent = 'Enter your registered email or mobile number.'; return; }
+  try {
+    const result = await api('/api/account/recovery', { method: 'POST', body: JSON.stringify(formData) });
+    document.querySelector('#recovery-message').textContent = result.message;
+    recoveryForm.reset();
+  } catch (error) { document.querySelector('#recovery-message').textContent = error.message; }
+});
+
+if (document.body.classList.contains('dashboard-page')) {
+  if (!localStorage.getItem('clinicflowToken')) window.location.href = '/login.html';
+  else api('/api/auth/me').then(session => {
+    const expectedPage = { receptionist: '/receptionist.html', doctor: '/doctor.html', admin: '/admin.html' }[session.user.role];
+    if (expectedPage && !window.location.pathname.endsWith(expectedPage)) window.location.href = expectedPage;
+  }).catch(() => {});
+}
 
 const logout = document.querySelector('#logout');
 if (logout) logout.addEventListener('click', () => { localStorage.removeItem('clinicflowToken'); window.location.href = '/login.html'; });

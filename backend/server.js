@@ -103,6 +103,12 @@ app.post('/api/auth/login', async (req, res) => {
   const token = jwt.sign({ sub: user.id, clinic_id: req.clinicId, role: user.role, name: user.name, email: user.email }, jwtSecret, { expiresIn: '12h' });
   res.json({ token, user: { name: user.name, email: user.email, role: user.role, clinic_id: req.clinicId } });
 });
+app.post('/api/account/recovery', async (req, res) => {
+  const { name, email, phone, role } = req.body || {};
+  if (!name?.trim() || (!email?.trim() && !phone?.trim()) || !['receptionist', 'doctor', 'admin'].includes(role)) return res.status(400).json({ error: 'Name, email or phone, and account role are required.' });
+  await db.prepare('INSERT INTO account_recovery_requests (clinic_id, name, email, phone, requested_role) VALUES (?, ?, ?, ?, ?)').run(req.clinicId, name.trim(), email?.trim().toLowerCase() || null, phone?.trim() || null, role);
+  res.status(201).json({ message: 'Your request was sent to the platform owner.' });
+});
 app.post('/api/platform/auth/login', async (req, res) => {
   const email = req.body?.email?.trim().toLowerCase();
   const password = req.body?.password || '';
@@ -120,6 +126,21 @@ app.get('/api/platform/clinics', authenticatePlatform, async (_req, res) => {
     FROM clinics c ORDER BY c.created_at DESC
   `).all();
   res.json(clinics);
+});
+app.get('/api/platform/recovery-requests', authenticatePlatform, async (_req, res) => {
+  res.json(await db.prepare(`SELECT r.id, r.clinic_id AS "clinicId", c.name AS "clinicName", r.name, r.email, r.phone, r.requested_role AS role, r.status, r.created_at AS "createdAt" FROM account_recovery_requests r JOIN clinics c ON c.id = r.clinic_id WHERE r.status = 'pending' ORDER BY r.created_at DESC`).all());
+});
+app.post('/api/platform/recovery-requests/:id/resolve', authenticatePlatform, async (req, res) => {
+  const temporaryPassword = String(req.body?.temporaryPassword || '').trim();
+  if (temporaryPassword.length < 8) return res.status(400).json({ error: 'Temporary password must contain at least 8 characters.' });
+  const request = await db.prepare("SELECT id, clinic_id, email, phone, requested_role FROM account_recovery_requests WHERE id = ? AND status = 'pending'").get(req.params.id);
+  if (!request) return res.status(404).json({ error: 'Recovery request not found or already resolved.' });
+  const user = await db.prepare('SELECT id, email FROM users WHERE clinic_id = ? AND role = ? AND ((email = ? AND ? IS NOT NULL) OR (phone = ? AND ? IS NOT NULL))').get(request.clinic_id, request.requested_role, request.email, request.email, request.phone, request.phone);
+  if (!user) return res.status(404).json({ error: 'No matching clinic user was found. Check the clinic, email, phone, and role.' });
+  const passwordHash = crypto.scryptSync(temporaryPassword, user.email, 64).toString('hex');
+  await db.prepare('UPDATE users SET password_hash = ? WHERE id = ? AND clinic_id = ?').run(passwordHash, user.id, request.clinic_id);
+  await db.prepare("UPDATE account_recovery_requests SET status = 'resolved', temporary_password_hash = ?, resolved_at = ? WHERE id = ?").run(passwordHash, timeNow(), request.id);
+  res.json({ success: true, loginEmail: user.email, temporaryPassword, message: 'Password reset. Give the temporary password to the verified staff member securely.' });
 });
 app.patch('/api/platform/clinics/:id/status', authenticatePlatform, async (req, res) => {
   const status = req.body?.status;
@@ -275,12 +296,12 @@ app.get('/api/admin/staff', authenticate, allowRoles('admin'), async (req, res) 
 });
 
 app.post('/api/admin/staff', authenticate, allowRoles('admin'), async (req, res) => {
-  const { name, email, password, role } = req.body || {};
+  const { name, email, phone, password, role } = req.body || {};
   if (!name?.trim() || !email?.trim() || !password || !['receptionist', 'doctor', 'admin'].includes(role)) return res.status(400).json({ error: 'Name, email, password, and a valid role are required.' });
   const normalizedEmail = email.trim().toLowerCase();
   const passwordHash = crypto.scryptSync(password, normalizedEmail, 64).toString('hex');
   try {
-    const result = await db.prepare('INSERT INTO users (clinic_id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?) RETURNING id').run(req.clinicId, name.trim(), normalizedEmail, passwordHash, role);
+    const result = await db.prepare('INSERT INTO users (clinic_id, name, email, phone, password_hash, role) VALUES (?, ?, ?, ?, ?, ?) RETURNING id').run(req.clinicId, name.trim(), normalizedEmail, phone?.trim() || null, passwordHash, role);
     res.status(201).json(await db.prepare('SELECT id, name, email, role FROM users WHERE clinic_id = ? AND id = ?').get(req.clinicId, result.lastInsertRowid));
   } catch (error) {
     if (error.code === '23505') return res.status(409).json({ error: 'That email is already used in this clinic.' });
