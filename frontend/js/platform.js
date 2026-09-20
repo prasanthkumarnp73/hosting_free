@@ -1,7 +1,9 @@
 const platformApi = async (url, options = {}) => {
   const token = localStorage.getItem('clinicflowPlatformToken');
   const response = await fetch(url, { ...options, headers: { 'Content-Type': 'application/json', ...(options.headers || {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
-  const data = await response.json();
+  const responseText = await response.text();
+  let data;
+  try { data = JSON.parse(responseText); } catch (_error) { throw new Error(`Server returned ${response.status} for ${url}. Redeploy the latest backend code.`); }
   if (!response.ok) throw new Error(data.error || 'Something went wrong');
   return data;
 };
