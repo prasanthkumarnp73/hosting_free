@@ -407,7 +407,7 @@ app.post('/register', async (req, res) => {
   res.status(201).json({ patient, whatsapp, message: 'Token created successfully.' });
 });
 
-app.post('/api/queue/next', authenticate, allowRoles('receptionist', 'doctor', 'admin'), async (req, res) => {
+app.post('/api/queue/next', authenticate, allowRoles('receptionist'), async (req, res) => {
   const next = await db.prepare("SELECT id FROM patients WHERE clinic_id = ? AND status = 'waiting' AND created_at::date = ? ORDER BY COALESCE(queue_order, token), token LIMIT 1").get(req.clinicId, today());
   if (!next) return res.status(404).json({ error: 'No patients are waiting.' });
   const appointment = await db.prepare('SELECT id FROM appointments WHERE clinic_id = ? AND patient_id = ? AND date = ? ORDER BY id DESC LIMIT 1').get(req.clinicId, next.id, today());

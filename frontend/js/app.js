@@ -317,8 +317,7 @@ async function refreshDashboard() {
     document.querySelector('#doctor-current-token').textContent = summary.current ? `#${summary.current.token}` : '—';
     document.querySelector('#doctor-current-patient').textContent = summary.current ? summary.current.name : 'Waiting for reception';
     const statusLabels = { waiting: 'In Queue', late: 'Late', late_arrival: 'Late', called: 'Consultation In Progress', completed: 'Completed', no_show: 'No Show' };
-    document.querySelector('#activity-list').innerHTML = queue.map(patient => `<div class="activity-item"><span class="activity-token">#${patient.token}</span><div><strong>${escapeHtml(patient.name)}</strong><small>${escapeHtml(patient.notes || 'General consultation')} · checked in ${formatCheckedInTime(patient)}</small><input class="doctor-note" data-note-id="${patient.id}" value="${escapeHtml(patient.notes || '')}" placeholder="Consultation note"><button class="action-link" data-save-note="${patient.id}">Save note</button></div><span class="status ${patient.status}">${statusLabels[patient.status] || patient.status}</span></div>`).join('') || '<p class="muted">No activity yet today.</p>';
-    document.querySelectorAll('[data-save-note]').forEach(button => button.addEventListener('click', async () => { const input = document.querySelector(`[data-note-id="${button.dataset.saveNote}"]`); await api(`/api/patients/${button.dataset.saveNote}/notes`, { method: 'PATCH', body: JSON.stringify({ notes: input.value }) }); refreshDashboard(); }));
+    document.querySelector('#activity-list').innerHTML = queue.map(patient => `<div class="activity-item"><span class="activity-token">#${patient.token}</span><div><strong>${escapeHtml(patient.name)}</strong><small>${escapeHtml(patient.notes || 'General consultation')} · checked in ${formatCheckedInTime(patient)}</small></div><span class="status ${patient.status}">${statusLabels[patient.status] || patient.status}</span></div>`).join('') || '<p class="muted">No activity yet today.</p>';
     if (!document.querySelector('#qr-image').src) { const qr = await api('/api/qr'); document.querySelector('#qr-image').src = qr.dataUrl; }
   }
 }
@@ -333,7 +332,5 @@ function formatCheckedInTime(patient) {
 }
 const callNext = document.querySelector('#call-next');
 if (callNext) callNext.addEventListener('click', async () => { try { const patient = await api('/api/queue/next', { method: 'POST' }); alert(`Now calling #${patient.token} · ${patient.name}`); refreshDashboard(); } catch (error) { alert(error.message); } });
-const doctorCallNext = document.querySelector('#doctor-call-next');
-if (doctorCallNext) doctorCallNext.addEventListener('click', async () => { try { const patient = await api('/api/queue/next', { method: 'POST' }); document.querySelector('#doctor-current-token').textContent = `#${patient.token}`; refreshDashboard(); } catch (error) { alert(error.message); } });
 if (window.io && document.querySelector('.dashboard-page, .patient-page')) { const socket = window.io(); const clinicRoom = ['localhost', '127.0.0.1'].includes(location.hostname) ? 'default' : location.hostname.split('.')[0]; socket.emit('clinic:join', clinicRoom || 'default'); socket.on('queue:updated', () => { if (document.querySelector('.dashboard-page')) refreshDashboard(); updatePublicQueue(); }); }
 if (document.querySelector('.dashboard-page')) { refreshDashboard(); setInterval(refreshDashboard, 10000); }
