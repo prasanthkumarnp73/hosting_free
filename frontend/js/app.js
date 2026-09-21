@@ -1,4 +1,6 @@
 const json = { headers: { 'Content-Type': 'application/json' } };
+const roleAccess = { admin: ['admin', 'doctor', 'receptionist', 'patient'], doctor: ['doctor', 'receptionist', 'patient'], receptionist: ['receptionist', 'patient'] };
+let currentRole = '';
 const api = async (url, options = {}) => {
   const headers = { ...json.headers, ...(options.headers || {}) };
   const token = localStorage.getItem('clinicflowToken');
@@ -74,8 +76,10 @@ if (recoveryForm) recoveryForm.addEventListener('submit', async event => {
 if (document.body.classList.contains('dashboard-page')) {
   if (!localStorage.getItem('clinicflowToken')) window.location.href = '/login.html';
   else api('/api/auth/me').then(session => {
-    const expectedPage = { receptionist: '/receptionist.html', doctor: '/doctor.html', admin: '/admin.html' }[session.user.role];
-    if (expectedPage && !window.location.pathname.endsWith(expectedPage)) window.location.href = expectedPage;
+    currentRole = session.user.role;
+    const pageRole = window.location.pathname.includes('admin') ? 'admin' : window.location.pathname.includes('doctor') ? 'doctor' : 'receptionist';
+    if (!roleAccess[currentRole]?.includes(pageRole)) window.location.href = '/access-denied.html';
+    document.body.dataset.role = currentRole;
   }).catch(() => {});
 }
 
@@ -90,12 +94,26 @@ async function refreshAdmin() {
   document.querySelector('#report-consulting').textContent = report.inConsultation;
   const staff = await api('/api/admin/staff');
   document.querySelector('#staff-body').innerHTML = staff.map(member => `<tr><td>${escapeHtml(member.name)}</td><td>${escapeHtml(member.email)}</td><td>${escapeHtml(member.role)}</td></tr>`).join('');
+  for (const type of ['patient', 'staff']) {
+    const qr = await api(`/api/qr?type=${type}`);
+    document.querySelector(`#admin-${type}-qr`).src = qr.dataUrl;
+    document.querySelector(`#admin-${type}-url`).textContent = qr.url;
+  }
 }
 const staffForm = document.querySelector('#staff-form');
 if (staffForm) staffForm.addEventListener('submit', async event => {
   event.preventDefault();
   try { await api('/api/admin/staff', { method: 'POST', body: JSON.stringify(Object.fromEntries(new FormData(staffForm))) }); staffForm.reset(); refreshAdmin(); } catch (error) { alert(error.message); }
 });
+document.querySelectorAll('[data-qr-download]').forEach(button => button.addEventListener('click', () => {
+  const image = document.querySelector(`#admin-${button.dataset.qrDownload}-qr`);
+  const link = document.createElement('a'); link.href = image.src; link.download = `clinicflow-${button.dataset.qrDownload}-qr.png`; link.click();
+}));
+document.querySelectorAll('[data-qr-print]').forEach(button => button.addEventListener('click', () => {
+  const image = document.querySelector(`#admin-${button.dataset.qrPrint}-qr`);
+  const printWindow = window.open('', '_blank');
+  if (printWindow) { printWindow.document.write(`<img src="${image.src}" style="width:320px"><script>window.print()<\/script>`); printWindow.document.close(); }
+}));
 if (document.querySelector('.admin-view')) { refreshAdmin(); setInterval(refreshAdmin, 15000); }
 
 const currentDateElement = document.querySelector('#current-date');
@@ -169,6 +187,8 @@ let publicQueueTimer;
 const patientDetailsStorageKey = 'patientDetails';
 const confirmation = document.querySelector('#confirmation');
 const publicCurrentToken = document.querySelector('#public-current-token');
+const doctorSelect = document.querySelector('#doctor-select');
+if (doctorSelect) api('/api/doctors').then(doctors => { doctorSelect.innerHTML = '<option value="">Select doctor</option>' + doctors.map(doctor => `<option value="${doctor.id}">${escapeHtml(doctor.name)} · ${escapeHtml(doctor.specialty)}</option>`).join(''); }).catch(() => { doctorSelect.innerHTML = '<option value="">Doctors unavailable</option>'; });
 
 async function updatePublicQueue() {
   if (!publicCurrentToken) return;
@@ -280,7 +300,7 @@ async function refreshDashboard() {
     document.querySelector('#current-patient').textContent = summary.current ? summary.current.name : 'No consultation in progress';
     const statusLabels = { waiting: 'In Queue', late: 'Late', late_arrival: 'Late', called: 'Consultation In Progress', completed: 'Completed', no_show: 'No Show' };
     document.querySelector('#queue-body').innerHTML = queue.map(patient => {
-      const actions = patient.status === 'waiting'
+      const actions = currentRole === 'doctor' || currentRole === 'admin' ? '' : patient.status === 'waiting'
         ? `<button class="action-link" data-late="${patient.id}">Mark late</button>`
         : ['late', 'late_arrival'].includes(patient.status)
           ? `<div class="queue-actions"><button class="action-link" data-requeue="${patient.id}" data-policy="next_available">Next slot</button><button class="action-link" data-requeue="${patient.id}" data-policy="end_of_queue">End of queue</button><button class="action-link" data-requeue="${patient.id}" data-policy="priority">Priority</button></div>`
@@ -313,4 +333,7 @@ function formatCheckedInTime(patient) {
 }
 const callNext = document.querySelector('#call-next');
 if (callNext) callNext.addEventListener('click', async () => { try { const patient = await api('/api/queue/next', { method: 'POST' }); alert(`Now calling #${patient.token} · ${patient.name}`); refreshDashboard(); } catch (error) { alert(error.message); } });
+const doctorCallNext = document.querySelector('#doctor-call-next');
+if (doctorCallNext) doctorCallNext.addEventListener('click', async () => { try { const patient = await api('/api/queue/next', { method: 'POST' }); document.querySelector('#doctor-current-token').textContent = `#${patient.token}`; refreshDashboard(); } catch (error) { alert(error.message); } });
+if (window.io && document.querySelector('.dashboard-page, .patient-page')) { const socket = window.io(); const clinicRoom = ['localhost', '127.0.0.1'].includes(location.hostname) ? 'default' : location.hostname.split('.')[0]; socket.emit('clinic:join', clinicRoom || 'default'); socket.on('queue:updated', () => { if (document.querySelector('.dashboard-page')) refreshDashboard(); updatePublicQueue(); }); }
 if (document.querySelector('.dashboard-page')) { refreshDashboard(); setInterval(refreshDashboard, 10000); }

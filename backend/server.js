@@ -1,6 +1,7 @@
 require('dotenv').config();
 const path = require('path');
 const express = require('express');
+const { Server: SocketServer } = require('socket.io');
 const cron = require('node-cron');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
@@ -13,6 +14,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 const clinicUrl = process.env.CLINIC_URL || `http://localhost:${port}`;
 const jwtSecret = process.env.JWT_SECRET || 'clinicflow-development-secret';
+let io;
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'frontend')));
 const databaseReady = require('./db').then(database => {
@@ -97,6 +99,9 @@ function signClinicUser(user, clinicId) {
 function signPlatformUser(owner) {
   const token = jwt.sign({ sub: owner.id, scope: 'platform', name: owner.name, email: owner.email }, jwtSecret, { expiresIn: '12h' });
   return { token, user: { name: owner.name, email: owner.email } };
+}
+function broadcastQueue(clinicId) {
+  if (io) io.to(`clinic:${clinicId}`).emit('queue:updated');
 }
 
 async function getSummary(clinicId) {
@@ -335,6 +340,7 @@ app.delete('/api/platform/clinics/:id', authenticatePlatform, async (req, res) =
 app.get('/api/auth/me', authenticate, (req, res) => res.json({ user: req.user }));
 app.get('/api/summary', authenticate, allowRoles('receptionist', 'doctor', 'admin'), async (req, res) => res.json(await getSummary(req.clinicId)));
 app.get('/api/queue', authenticate, allowRoles('receptionist', 'doctor', 'admin'), async (req, res) => res.json(await getQueue(req.clinicId)));
+app.get('/api/doctors', async (req, res) => res.json(await db.prepare('SELECT id, name, specialty FROM doctors WHERE clinic_id = ? AND is_available = TRUE ORDER BY name').all(req.clinicId)));
 const queueStatus = async (req, res) => {
   const token = Number.parseInt(req.query.token, 10);
   if (!Number.isInteger(token) || token < 1) return res.status(400).json({ error: 'A valid token is required.' });
@@ -372,7 +378,7 @@ app.get('/queue/current', currentQueue);
 app.get('/api/queue/current', currentQueue);
 
 app.post('/register', async (req, res) => {
-  const { name, phone, language = 'en', notes = '' } = req.body;
+  const { name, phone, age, gender, department, doctorId, language = 'en', notes = '' } = req.body;
   if (!name?.trim() || !phone?.trim()) return res.status(400).json({ error: 'Name and phone number are required.' });
   const enteredPhone = phone.trim();
   if (!phonePattern.test(enteredPhone)) return res.status(400).json({ error: 'WhatsApp number must be 10 digits or +91 followed by 10 digits.' });
@@ -380,9 +386,12 @@ app.post('/register', async (req, res) => {
 
   const token = (await db.prepare("SELECT COALESCE(MAX(token), 0) + 1 AS nextToken FROM patients WHERE clinic_id = ? AND created_at::date = ?").get(req.clinicId, today())).nexttoken;
   const checkedInAt = timeNow();
-  const result = await db.prepare('INSERT INTO patients (clinic_id, name, phone, language, notes, token, created_at, checked_in_at, queue_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id').run(req.clinicId, name.trim(), normalizedPhone, language, notes.trim(), token, checkedInAt, checkedInAt, token);
-  const patient = await db.prepare('SELECT id, name, phone, language, notes, token, status, created_at AS "createdAt", checked_in_at AS "checkedInAt" FROM patients WHERE clinic_id = ? AND id = ?').get(req.clinicId, result.lastInsertRowid);
-  const doctor = await db.prepare('SELECT id FROM doctors WHERE clinic_id = ? ORDER BY id LIMIT 1').get(req.clinicId);
+  const doctor = doctorId
+    ? await db.prepare('SELECT id FROM doctors WHERE clinic_id = ? AND id = ? AND is_available = TRUE').get(req.clinicId, doctorId)
+    : await db.prepare('SELECT id FROM doctors WHERE clinic_id = ? ORDER BY id LIMIT 1').get(req.clinicId);
+  if (!doctor) return res.status(400).json({ error: 'Select an available doctor.' });
+  const result = await db.prepare('INSERT INTO patients (clinic_id, name, phone, age, gender, department, language, notes, token, created_at, checked_in_at, queue_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id').run(req.clinicId, name.trim(), normalizedPhone, Number.parseInt(age, 10) || null, gender || null, department?.trim() || null, language, notes.trim(), token, checkedInAt, checkedInAt, token);
+  const patient = await db.prepare('SELECT id, name, phone, age, gender, department, language, notes, token, status, created_at AS "createdAt", checked_in_at AS "checkedInAt" FROM patients WHERE clinic_id = ? AND id = ?').get(req.clinicId, result.lastInsertRowid);
   const appointmentResult = await db.prepare('INSERT INTO appointments (clinic_id, patient_id, date, doctor_id, status) VALUES (?, ?, ?, ?, ?) RETURNING id').run(req.clinicId, patient.id, today(), doctor.id, 'checked_in');
   await recordHistory(req.clinicId, patient.id, appointmentResult.lastInsertRowid, null, 'checked_in', 'Patient registered and checked in');
 
@@ -394,17 +403,20 @@ app.post('/register', async (req, res) => {
     console.error(error.message);
     whatsapp.error = 'WhatsApp delivery failed';
   }
+  broadcastQueue(req.clinicId);
   res.status(201).json({ patient, whatsapp, message: 'Token created successfully.' });
 });
 
-app.post('/api/queue/next', authenticate, allowRoles('receptionist'), async (req, res) => {
+app.post('/api/queue/next', authenticate, allowRoles('receptionist', 'doctor', 'admin'), async (req, res) => {
   const next = await db.prepare("SELECT id FROM patients WHERE clinic_id = ? AND status = 'waiting' AND created_at::date = ? ORDER BY COALESCE(queue_order, token), token LIMIT 1").get(req.clinicId, today());
   if (!next) return res.status(404).json({ error: 'No patients are waiting.' });
   const appointment = await db.prepare('SELECT id FROM appointments WHERE clinic_id = ? AND patient_id = ? AND date = ? ORDER BY id DESC LIMIT 1').get(req.clinicId, next.id, today());
   await db.prepare("UPDATE patients SET status = 'called', called_at = ? WHERE clinic_id = ? AND id = ?").run(timeNow(), req.clinicId, next.id);
   await db.prepare("UPDATE appointments SET status = 'called' WHERE clinic_id = ? AND id = ?").run(req.clinicId, appointment.id);
   await recordHistory(req.clinicId, next.id, appointment.id, 'waiting', 'called', 'Reception called next available patient');
-  res.json(await db.prepare('SELECT id, name, phone, token, status FROM patients WHERE clinic_id = ? AND id = ?').get(req.clinicId, next.id));
+  const patient = await db.prepare('SELECT id, name, phone, token, status FROM patients WHERE clinic_id = ? AND id = ?').get(req.clinicId, next.id);
+  broadcastQueue(req.clinicId);
+  res.json(patient);
 });
 
 app.patch('/api/patients/:id/late', authenticate, allowRoles('receptionist'), async (req, res) => {
@@ -416,6 +428,7 @@ app.patch('/api/patients/:id/late', authenticate, allowRoles('receptionist'), as
   await db.prepare("UPDATE appointments SET status = 'late' WHERE clinic_id = ? AND id = ?").run(req.clinicId, appointment.id);
   await recordHistory(req.clinicId, patient.id, appointment.id, patient.status, 'late', 'Patient arrived after scheduled sequence');
   try { await notifyDoctor(`Patient ${patient.name} (token #${patient.token}) has checked in late and is waiting for a new slot.`, 'Late arrival alert'); } catch (error) { console.error(error.message); }
+  broadcastQueue(req.clinicId);
   res.json({ success: true, status: 'late' });
 });
 
@@ -442,6 +455,7 @@ app.patch('/api/patients/:id/requeue', authenticate, allowRoles('receptionist'),
   await db.prepare("UPDATE patients SET status = 'waiting', queue_order = ? WHERE clinic_id = ? AND id = ?").run(queueOrder, req.clinicId, patient.id);
   await db.prepare("UPDATE appointments SET status = 'in_queue' WHERE clinic_id = ? AND id = ?").run(req.clinicId, appointment.id);
   await recordHistory(req.clinicId, patient.id, appointment.id, patient.status, 'in_queue', `Late patient requeued using ${policy.replaceAll('_', ' ')} policy`, policy);
+  broadcastQueue(req.clinicId);
   res.json({ success: true, policy, queueOrder });
 });
 
@@ -458,6 +472,7 @@ app.patch('/api/patients/:id/status', authenticate, allowRoles('receptionist', '
   await db.prepare(`UPDATE patients SET status = ?${field} WHERE clinic_id = ? AND id = ?`).run(...(field ? [status, timeNow(), req.clinicId, req.params.id] : [status, req.clinicId, req.params.id]));
   await db.prepare('UPDATE appointments SET status = ? WHERE clinic_id = ? AND id = ?').run(status, req.clinicId, appointment.id);
   await recordHistory(req.clinicId, patient.id, appointment.id, patient.status, status, `Status updated by reception`);
+  broadcastQueue(req.clinicId);
   res.json({ success: true });
 });
 
@@ -496,7 +511,8 @@ app.get('/api/admin/reports', authenticate, allowRoles('admin'), async (req, res
 });
 
 app.get('/api/qr', authenticate, allowRoles('receptionist', 'doctor', 'admin'), async (req, res) => {
-  const activeClinicUrl = `${req.protocol}://${req.get('host')}/`;
+  const destination = req.query.type === 'staff' ? '/login' : '/patient';
+  const activeClinicUrl = `${req.protocol}://${req.get('host')}${destination}`;
   res.json({ url: activeClinicUrl, dataUrl: await generateClinicQr(activeClinicUrl) });
 });
 
@@ -516,6 +532,7 @@ app.get('/webhook', (req, res) => {
 
 app.get('/patient', (_req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'index.html')));
 app.get('/staff', (_req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'login.html')));
+app.get('/login', (_req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'login.html')));
 app.get('/developer', (_req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'platform-login.html')));
 app.get('/admin/add-clinic', (_req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'admin-add-clinic.html')));
 app.get('/start', (_req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'start.html')));
@@ -534,7 +551,9 @@ app.get('/{*splat}', (_req, res) => res.sendFile(path.join(__dirname, '..', 'fro
 
 if (require.main === module) {
   databaseReady.then(() => {
-    app.listen(port, () => console.log(`ClinicFlow running at ${clinicUrl} (${isConfigured() ? 'WhatsApp live' : 'WhatsApp demo mode'})`));
+    const server = app.listen(port, () => console.log(`ClinicFlow running at ${clinicUrl} (${isConfigured() ? 'WhatsApp live' : 'WhatsApp demo mode'})`));
+    io = new SocketServer(server);
+    io.on('connection', socket => socket.on('clinic:join', clinicId => socket.join(`clinic:${String(clinicId || 'default')}`)));
   }).catch(error => {
     console.error('Could not initialize PostgreSQL database:', error);
     process.exitCode = 1;

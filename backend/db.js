@@ -106,6 +106,9 @@ async function initializeDatabase() {
       clinic_id TEXT NOT NULL DEFAULT 'default',
       name TEXT NOT NULL,
       phone TEXT NOT NULL,
+      age INTEGER,
+      gender TEXT,
+      department TEXT,
       language TEXT NOT NULL DEFAULT 'en',
       notes TEXT,
       token INTEGER NOT NULL,
@@ -160,6 +163,9 @@ async function initializeDatabase() {
   await query("CREATE INDEX IF NOT EXISTS clinics_status_idx ON clinics (status)");
   await query("ALTER TABLE doctors ADD COLUMN IF NOT EXISTS clinic_id TEXT NOT NULL DEFAULT 'default'");
   await query("ALTER TABLE patients ADD COLUMN IF NOT EXISTS clinic_id TEXT NOT NULL DEFAULT 'default'");
+  await query("ALTER TABLE patients ADD COLUMN IF NOT EXISTS age INTEGER");
+  await query("ALTER TABLE patients ADD COLUMN IF NOT EXISTS gender TEXT");
+  await query("ALTER TABLE patients ADD COLUMN IF NOT EXISTS department TEXT");
   await query("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS clinic_id TEXT NOT NULL DEFAULT 'default'");
   await query("ALTER TABLE appointment_history ADD COLUMN IF NOT EXISTS clinic_id TEXT NOT NULL DEFAULT 'default'");
   await query("CREATE INDEX IF NOT EXISTS patients_clinic_created_at_idx ON patients (clinic_id, created_at)");

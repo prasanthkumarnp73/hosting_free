@@ -100,6 +100,10 @@ td:first-child { color: var(--orange); font-weight: 700; }
 .action-link { border: 0; background: none; color: var(--green); cursor: pointer; font: 600 12px 'DM Sans'; }
 .queue-actions { display: flex; flex-wrap: wrap; gap: 8px; min-width: 180px; }
 .queue-actions .action-link { padding: 4px 0; }
+.qr-management { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; padding: 0 30px 30px; }
+.qr-management article { padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcfa; }
+.qr-management img { display: block; width: 150px; height: 150px; margin-bottom: 12px; }
+.qr-management .muted { overflow-wrap: anywhere; font-size: 11px; }
 
 .doctor-layout { display: grid; grid-template-columns: minmax(0, 1fr) 310px; gap: 24px; }
 .main-column, .side-column { display: grid; align-content: start; gap: 24px; }
@@ -161,6 +165,7 @@ td:first-child { color: var(--orange); font-weight: 700; }
   th, td { padding: 14px 16px; }
   .section-heading { padding: 22px 18px; }
   .activity-list { padding: 0 18px 15px; }
+  .qr-management { grid-template-columns: 1fr; padding: 0 18px 22px; }
 }
 
 @media (max-width: 480px) {
