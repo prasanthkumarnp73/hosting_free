@@ -461,26 +461,19 @@ app.patch('/api/patients/:id/requeue', authenticate, allowRoles('receptionist'),
 
 app.get('/api/patients/:id/history', authenticate, allowRoles('doctor', 'admin'), async (req, res) => res.json(await db.prepare('SELECT from_status AS "fromStatus", to_status AS "toStatus", reason, queue_policy AS "queuePolicy", changed_at AS "changedAt" FROM appointment_history WHERE clinic_id = ? AND patient_id = ? ORDER BY changed_at DESC, id DESC').all(req.clinicId, req.params.id)));
 
-app.patch('/api/patients/:id/status', authenticate, allowRoles('receptionist', 'doctor'), async (req, res) => {
+app.patch('/api/patients/:id/status', authenticate, allowRoles('receptionist'), async (req, res) => {
   const { status } = req.body;
-  if (!['waiting', 'called', 'completed', 'no_show'].includes(status)) return res.status(400).json({ error: 'Invalid status.' });
+  if (!['completed'].includes(status)) return res.status(400).json({ error: 'Reception can only complete a consultation from this action.' });
   const patient = await db.prepare('SELECT id, status FROM patients WHERE clinic_id = ? AND id = ?').get(req.clinicId, req.params.id);
   if (!patient) return res.status(404).json({ error: 'Patient not found.' });
+  if (patient.status !== 'called') return res.status(400).json({ error: 'Only the patient currently in consultation can be completed.' });
   const appointment = await db.prepare('SELECT id FROM appointments WHERE clinic_id = ? AND patient_id = ? AND date = ? ORDER BY id DESC LIMIT 1').get(req.clinicId, req.params.id, today());
+  if (!appointment) return res.status(404).json({ error: 'Today\'s appointment was not found.' });
   const field = status === 'completed' ? ', completed_at = ?' : '';
-  const params = field ? [status, timeNow(), req.params.id] : [status, req.params.id];
   await db.prepare(`UPDATE patients SET status = ?${field} WHERE clinic_id = ? AND id = ?`).run(...(field ? [status, timeNow(), req.clinicId, req.params.id] : [status, req.clinicId, req.params.id]));
   await db.prepare('UPDATE appointments SET status = ? WHERE clinic_id = ? AND id = ?').run(status, req.clinicId, appointment.id);
-  await recordHistory(req.clinicId, patient.id, appointment.id, patient.status, status, `Status updated by reception`);
+  await recordHistory(req.clinicId, patient.id, appointment.id, patient.status, status, 'Reception completed consultation');
   broadcastQueue(req.clinicId);
-  res.json({ success: true });
-});
-
-app.patch('/api/patients/:id/notes', authenticate, allowRoles('doctor'), async (req, res) => {
-  const notes = String(req.body?.notes || '').trim();
-  const patient = await db.prepare('SELECT id FROM patients WHERE clinic_id = ? AND id = ?').get(req.clinicId, req.params.id);
-  if (!patient) return res.status(404).json({ error: 'Patient not found.' });
-  await db.prepare('UPDATE patients SET notes = ? WHERE clinic_id = ? AND id = ?').run(notes, req.clinicId, req.params.id);
   res.json({ success: true });
 });
 

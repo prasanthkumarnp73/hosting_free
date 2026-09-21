@@ -304,7 +304,7 @@ async function refreshDashboard() {
         ? `<button class="action-link" data-late="${patient.id}">Mark late</button>`
         : ['late', 'late_arrival'].includes(patient.status)
           ? `<div class="queue-actions"><button class="action-link" data-requeue="${patient.id}" data-policy="next_available">Next slot</button><button class="action-link" data-requeue="${patient.id}" data-policy="end_of_queue">End of queue</button><button class="action-link" data-requeue="${patient.id}" data-policy="priority">Priority</button></div>`
-          : patient.status === 'called' ? `<button class="action-link" data-complete="${patient.id}">Complete</button>` : '';
+          : patient.status === 'called' ? `<button class="action-link" data-complete="${patient.id}">Complete consultation</button>` : '';
       return `<tr><td>#${patient.token}</td><td><strong>${escapeHtml(patient.name)}</strong><br><small class="muted">${escapeHtml(patient.phone)}</small></td><td>${escapeHtml(patient.notes || 'General consultation')}</td><td>${formatCheckedInTime(patient)}</td><td><span class="status ${patient.status}">${statusLabels[patient.status] || patient.status}</span></td><td>${actions}</td></tr>`;
     }).join('') || '<tr><td colspan="6" class="muted">No patients have joined today.</td></tr>';
     document.querySelectorAll('[data-late]').forEach(button => button.addEventListener('click', async () => { await api(`/api/patients/${button.dataset.late}/late`, { method: 'PATCH', headers: json.headers }); refreshDashboard(); }));
