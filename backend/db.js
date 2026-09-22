@@ -143,13 +143,25 @@ async function initializeDatabase() {
     CREATE INDEX IF NOT EXISTS appointments_date_idx ON appointments (date);
   `);
   await query("INSERT INTO clinics (id, name) VALUES (?, ?) ON CONFLICT (id) DO NOTHING", [clinicId, clinicName]);
-  await query("INSERT INTO clinics (id, name, subdomain, status) VALUES ('RJ', 'RJ Clinic', 'rj-clinic', 'active') ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, subdomain = EXCLUDED.subdomain, status = EXCLUDED.status");
   await query("ALTER TABLE clinics ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'");
   await query("ALTER TABLE clinics ADD COLUMN IF NOT EXISTS smsgate_endpoint TEXT");
   await query("ALTER TABLE clinics ADD COLUMN IF NOT EXISTS subdomain TEXT");
+  await query("INSERT INTO clinics (id, name, subdomain, status) VALUES ('RJ', 'RJ Clinic', 'rj-clinic', 'active') ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, subdomain = EXCLUDED.subdomain, status = EXCLUDED.status");
   await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT");
   await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT");
   await query("CREATE UNIQUE INDEX IF NOT EXISTS clinics_name_lower_idx ON clinics (LOWER(name))");
+  await query(`
+    WITH duplicate_subdomains AS (
+      SELECT ctid, ROW_NUMBER() OVER (PARTITION BY LOWER(subdomain) ORDER BY created_at, id) AS duplicate_rank
+      FROM clinics
+      WHERE subdomain IS NOT NULL
+    )
+    UPDATE clinics AS clinics_to_clean
+    SET subdomain = NULL
+    FROM duplicate_subdomains
+    WHERE clinics_to_clean.ctid = duplicate_subdomains.ctid
+      AND duplicate_subdomains.duplicate_rank > 1
+  `);
   await query("CREATE UNIQUE INDEX IF NOT EXISTS clinics_subdomain_idx ON clinics (subdomain) WHERE subdomain IS NOT NULL");
   await query("CREATE UNIQUE INDEX IF NOT EXISTS users_clinic_username_idx ON users (clinic_id, username) WHERE username IS NOT NULL");
   await query("ALTER TABLE platform_admins ADD COLUMN IF NOT EXISTS phone TEXT");
