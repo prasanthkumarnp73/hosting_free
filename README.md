@@ -44,6 +44,14 @@ Platform onboarding: sign in at `/developer`, choose **Add clinic**, enter the c
 
 Every operational table carries a `clinic_id`. The service resolves it from the first subdomain label (`sunrise.example.com` -> `sunrise`) or from `/clinics/:clinicId` paths; localhost uses `CLINIC_ID` or `default`. All staff JWTs contain both `clinic_id` and `role`, and backend queries verify the token clinic before applying role permissions.
 
+Tenant hostnames must already exist in `clinics.subdomain`; unknown hosts are rejected instead of creating a tenant implicitly. The primary Render hostname can be set with `SERVICE_HOSTNAME` (or `RENDER_SERVICE_NAME`) and falls back to `view-clinic`. Clinic sessions are JWTs plus host-only, `Secure`, `HttpOnly`, `SameSite=Lax` cookies. Production requests require HTTPS. Platform reporting is intentionally cross-tenant and requires a platform-scoped JWT.
+
+Run the CI smoke test with `BASE_URL`, `RJ_ADMIN_EMAIL`, and `RJ_ADMIN_PASSWORD` set. It creates a receptionist through the RJ admin API, logs in against the RJ host, creates a patient, reads the RJ summary, and verifies that the same JWT is rejected on another clinic host:
+
+```bash
+npm run test:tenant
+```
+
 Set `JWT_SECRET` in production. To bootstrap the first clinic admin, set `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_PHONE`, and optionally `ADMIN_NAME` before the first start. Staff can then be added from `/admin.html`. Use separate clinic subdomains behind the same deployment, for example `sunrise.example.com` and `lakeside.example.com`.
 
 The RJ tenant is initialized as `clinic_id = RJ` with subdomain `rj-clinic`. Requests for `rj-clinic.onrender.com` resolve through that database mapping, so staff login and every operational query remain scoped to RJ. To bootstrap RJ staff accounts, set `RJ_STAFF_JSON` in the Render web service environment before redeploying:

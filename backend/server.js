@@ -14,8 +14,8 @@ const port = process.env.PORT || 3000;
 const clinicUrl = process.env.CLINIC_URL || `http://localhost:${port}`;
 const jwtSecret = process.env.JWT_SECRET || 'clinicflow-development-secret';
 let io;
+const metrics = { requests: 0, byClinic: Object.create(null), byStatus: Object.create(null) };
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '..', 'frontend')));
 const databaseReady = require('./db').then(database => {
   db = database;
   return database;
@@ -26,19 +26,26 @@ app.use(async (_req, _res, next) => {
 
 async function resolveClinicId(req) {
   const pathMatch = req.path.match(/^\/clinics\/([a-z0-9-]+)/i);
-  if (pathMatch) return pathMatch[1].toLowerCase();
+  if (pathMatch) {
+    const clinic = await db.prepare('SELECT id FROM clinics WHERE LOWER(id) = ? OR LOWER(subdomain) = ?').get(pathMatch[1].toLowerCase(), pathMatch[1].toLowerCase());
+    return clinic?.id || null;
+  }
   const hostname = (req.hostname || '').toLowerCase();
   const hostLabel = hostname.split('.')[0];
   if (hostLabel && !['www', 'localhost', '127'].includes(hostLabel)) {
     const clinic = await db.prepare('SELECT id FROM clinics WHERE LOWER(subdomain) = ?').get(hostLabel);
     if (clinic) return clinic.id;
-    if (!hostname.endsWith('.onrender.com')) return hostLabel;
+    const serviceHost = String(process.env.SERVICE_HOSTNAME || process.env.RENDER_SERVICE_NAME || 'view-clinic').toLowerCase();
+    if (hostname.endsWith('.onrender.com') && hostLabel === serviceHost) return process.env.CLINIC_ID || 'default';
+    return null;
   }
   return process.env.CLINIC_ID || 'default';
 }
 
-app.use(async (req, _res, next) => {
+app.use(async (req, res, next) => {
+  if (process.env.NODE_ENV === 'production' && req.get('x-forwarded-proto') !== 'https') return res.status(400).json({ error: 'HTTPS is required.' });
   req.clinicId = await resolveClinicId(req);
+  if (!req.clinicId) return res.status(404).json({ error: 'Clinic hostname is not registered.' });
   await db.prepare('INSERT INTO clinics (id, name) VALUES (?, ?) ON CONFLICT (id) DO NOTHING').run(req.clinicId, req.clinicId === 'default' ? 'Prasanth Clinic' : `${req.clinicId} Clinic`);
   await db.prepare("INSERT INTO doctors (clinic_id, name, specialty) SELECT ?, 'Clinic doctor', 'General medicine' WHERE NOT EXISTS (SELECT 1 FROM doctors WHERE clinic_id = ?)").run(req.clinicId, req.clinicId);
   if (!req.path.startsWith('/api/platform')) {
@@ -47,12 +54,29 @@ app.use(async (req, _res, next) => {
   }
   next();
 });
+app.use((req, res, next) => {
+  const startedAt = Date.now();
+  res.on('finish', () => {
+    metrics.requests += 1;
+    metrics.byClinic[req.clinicId] = (metrics.byClinic[req.clinicId] || 0) + 1;
+    const status = String(res.statusCode);
+    metrics.byStatus[status] = (metrics.byStatus[status] || 0) + 1;
+    console.log(JSON.stringify({ event: 'request', clinic_id: req.clinicId, method: req.method, path: req.path, status: res.statusCode, duration_ms: Date.now() - startedAt }));
+  });
+  next();
+});
+app.use(express.static(path.join(__dirname, '..', 'frontend')));
+function readCookies(req) {
+  return Object.fromEntries(String(req.headers.cookie || '').split(';').map(value => value.trim().split('='))
+    .filter(([name, value]) => name && value)
+    .map(([name, ...value]) => [name, decodeURIComponent(value.join('='))]));
+}
 const authenticate = (req, res, next) => {
-  const token = req.headers.authorization?.replace(/^Bearer\s+/i, '');
+  const token = req.headers.authorization?.replace(/^Bearer\s+/i, '') || readCookies(req).clinicflowSession;
   if (!token) return res.status(401).json({ error: 'Authentication is required.' });
   try {
     req.user = jwt.verify(token, jwtSecret);
-    if (req.user.clinic_id !== req.clinicId) return res.status(403).json({ error: 'This account does not belong to this clinic.' });
+    if (req.user.scope || !req.user.clinic_id || req.user.clinic_id !== req.clinicId) return res.status(403).json({ error: 'This account does not belong to this clinic.' });
     next();
   } catch (_error) { return res.status(401).json({ error: 'Invalid or expired session.' }); }
 };
@@ -98,6 +122,9 @@ async function sendLoginOtp(clinicId, phone, code) {
 function signClinicUser(user, clinicId) {
   const token = jwt.sign({ sub: user.id, clinic_id: clinicId, role: user.role, name: user.name, email: user.email }, jwtSecret, { expiresIn: '12h' });
   return { token, user: { name: user.name, email: user.email, role: user.role, clinic_id: clinicId } };
+}
+function setClinicSession(res, token) {
+  res.setHeader('Set-Cookie', `clinicflowSession=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=43200`);
 }
 function signPlatformUser(owner) {
   const token = jwt.sign({ sub: owner.id, scope: 'platform', name: owner.name, email: owner.email }, jwtSecret, { expiresIn: '12h' });
@@ -169,7 +196,7 @@ app.post('/api/auth/otp/verify', async (req, res) => {
   if (!await consumeOtp('clinic', req.clinicId, phone, code)) return res.status(401).json({ error: 'Invalid or expired OTP.' });
   const user = await db.prepare('SELECT id, name, email, role FROM users WHERE clinic_id = ? AND phone = ?').get(req.clinicId, phone);
   if (!user) return res.status(401).json({ error: 'Clinic account not found.' });
-  res.json(signClinicUser(user, req.clinicId));
+  const session = signClinicUser(user, req.clinicId); setClinicSession(res, session.token); res.json(session);
 });
 app.post('/auth/send-otp', async (req, res) => {
   const phone = normalizeLoginPhone(req.body?.phone);
@@ -186,7 +213,7 @@ app.post('/auth/verify-otp', async (req, res) => {
   if (!await consumeOtp('clinic', req.clinicId, phone, code)) return res.status(401).json({ error: 'Invalid or expired OTP.' });
   const user = await db.prepare('SELECT id, name, email, role FROM users WHERE clinic_id = ? AND phone = ?').get(req.clinicId, phone);
   if (!user) return res.status(401).json({ error: 'Clinic account not found.' });
-  res.json(signClinicUser(user, req.clinicId));
+  const session = signClinicUser(user, req.clinicId); setClinicSession(res, session.token); res.json(session);
 });
 
 app.post('/api/patient/auth/otp/request', async (req, res) => {
@@ -214,7 +241,7 @@ app.post('/api/auth/login', async (req, res) => {
   const user = email ? await db.prepare('SELECT id, name, email, password_hash, role FROM users WHERE clinic_id = ? AND email = ?').get(req.clinicId, email) : null;
   const passwordHash = user ? crypto.scryptSync(password, email, 64).toString('hex') : '';
   if (!user || !crypto.timingSafeEqual(Buffer.from(passwordHash), Buffer.from(user.password_hash))) return res.status(401).json({ error: 'Invalid email or password.' });
-  res.json(signClinicUser(user, req.clinicId));
+  const session = signClinicUser(user, req.clinicId); setClinicSession(res, session.token); res.json(session);
 });
 app.post('/api/account/recovery', async (req, res) => {
   const { name, email, phone, role } = req.body || {};
@@ -341,6 +368,7 @@ app.delete('/api/platform/clinics/:id', authenticatePlatform, async (req, res) =
   res.json({ ...clinic, message: 'Clinic deactivated. Data was retained.' });
 });
 app.get('/api/auth/me', authenticate, (req, res) => res.json({ user: req.user }));
+app.get('/api/platform/metrics', authenticatePlatform, (_req, res) => res.json(metrics));
 app.get('/api/summary', authenticate, allowRoles('receptionist', 'doctor', 'admin'), async (req, res) => res.json(await getSummary(req.clinicId)));
 app.get('/api/queue', authenticate, allowRoles('receptionist', 'doctor', 'admin'), async (req, res) => res.json(await getQueue(req.clinicId)));
 app.get('/api/doctors', async (req, res) => res.json(await db.prepare('SELECT id, name, specialty FROM doctors WHERE clinic_id = ? AND is_available = TRUE ORDER BY name').all(req.clinicId)));
@@ -529,6 +557,7 @@ app.get('/webhook', (req, res) => {
 app.get('/patient', (_req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'index.html')));
 app.get('/staff', (_req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'login.html')));
 app.get('/login', (_req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'login.html')));
+app.get('/clinics/:clinicId/login', (_req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'login.html')));
 app.get('/developer', (_req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'platform-login.html')));
 app.get('/admin/add-clinic', (_req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'admin-add-clinic.html')));
 app.get('/start', (_req, res) => res.sendFile(path.join(__dirname, '..', 'frontend', 'start.html')));

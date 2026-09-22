@@ -5,7 +5,8 @@
   "main": "backend/server.js",
   "scripts": {
     "start": "node backend/server.js",
-    "dev": "nodemon backend/server.js"
+    "dev": "nodemon backend/server.js",
+    "test:tenant": "node scripts/tenant-smoke.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
