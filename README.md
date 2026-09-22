@@ -38,13 +38,21 @@ admin        -> /admin.html
 
 Patients never use staff or developer login. Clinic staff never use the developer portal. The developer portal is only for the application owner and manages all clinics; clinic admin manages only their own clinic.
 
-Platform onboarding: sign in at `/developer`, choose **Add clinic**, enter the clinic name, lowercase subdomain, admin username, and strong password. The backend creates the clinic, admin user, and default doctor in one transaction. The new clinic admin signs in through `/staff`; the password is stored as a bcrypt hash and is never returned by the API.
+Platform onboarding: sign in at `/developer`, choose **Add clinic**, enter the clinic name, lowercase subdomain, admin username, and strong password. The backend creates the clinic, admin user, and default doctor in one transaction. The new clinic admin signs in through `/staff`; the password is stored as a scrypt hash and is never returned by the API.
 
 ## Multi-clinic tenancy
 
 Every operational table carries a `clinic_id`. The service resolves it from the first subdomain label (`sunrise.example.com` -> `sunrise`) or from `/clinics/:clinicId` paths; localhost uses `CLINIC_ID` or `default`. All staff JWTs contain both `clinic_id` and `role`, and backend queries verify the token clinic before applying role permissions.
 
 Set `JWT_SECRET` in production. To bootstrap the first clinic admin, set `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_PHONE`, and optionally `ADMIN_NAME` before the first start. Staff can then be added from `/admin.html`. Use separate clinic subdomains behind the same deployment, for example `sunrise.example.com` and `lakeside.example.com`.
+
+The RJ tenant is initialized as `clinic_id = RJ` with subdomain `rj-clinic`. Requests for `rj-clinic.onrender.com` resolve through that database mapping, so staff login and every operational query remain scoped to RJ. To bootstrap RJ staff accounts, set `RJ_STAFF_JSON` in the Render web service environment before redeploying:
+
+```json
+[{"name":"RJ Admin","email":"admin@example.com","phone":"9876543210","password":"use-a-strong-password","role":"admin"},{"name":"RJ Reception","email":"reception@example.com","phone":"9876543211","password":"use-a-strong-password","role":"receptionist"},{"name":"RJ Doctor","email":"doctor@example.com","phone":"9876543212","password":"use-a-strong-password","role":"doctor"}]
+```
+
+The seed is idempotent and does not overwrite existing RJ account passwords. The `rj-clinic.onrender.com` hostname must also be configured to route to this Render service; the application maps its host label after the request reaches Express.
 
 The developer portal is separate from clinic administration. Set `PLATFORM_ADMIN_EMAIL`, `PLATFORM_ADMIN_PASSWORD`, and optionally `PLATFORM_ADMIN_NAME` in the hosting environment, then open `/platform-login.html`. After signing in, `/platform.html` lists every clinic with staff and patient counts. Deactivating a clinic blocks its users and patient registration while retaining data; it can be reactivated from the same portal.
 

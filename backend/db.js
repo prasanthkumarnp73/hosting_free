@@ -1,4 +1,5 @@
 const { Pool } = require('pg');
+const crypto = require('crypto');
 
 const connectionString = process.env.DATABASE_URL;
 const databaseError = new Error('DATABASE_URL is required. Add the PostgreSQL Internal Database URL to Render Environment Variables.');
@@ -142,6 +143,7 @@ async function initializeDatabase() {
     CREATE INDEX IF NOT EXISTS appointments_date_idx ON appointments (date);
   `);
   await query("INSERT INTO clinics (id, name) VALUES (?, ?) ON CONFLICT (id) DO NOTHING", [clinicId, clinicName]);
+  await query("INSERT INTO clinics (id, name, subdomain, status) VALUES ('RJ', 'RJ Clinic', 'rj-clinic', 'active') ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, subdomain = EXCLUDED.subdomain, status = EXCLUDED.status");
   await query("ALTER TABLE clinics ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'");
   await query("ALTER TABLE clinics ADD COLUMN IF NOT EXISTS smsgate_endpoint TEXT");
   await query("ALTER TABLE clinics ADD COLUMN IF NOT EXISTS subdomain TEXT");
@@ -171,6 +173,7 @@ async function initializeDatabase() {
   await query("CREATE INDEX IF NOT EXISTS patients_clinic_created_at_idx ON patients (clinic_id, created_at)");
   await query("CREATE INDEX IF NOT EXISTS appointments_clinic_date_idx ON appointments (clinic_id, date)");
   await query("INSERT INTO doctors (clinic_id, name, specialty) SELECT ?, 'Clinic doctor', 'General medicine' WHERE NOT EXISTS (SELECT 1 FROM doctors WHERE clinic_id = ?)", [clinicId, clinicId]);
+  await query("INSERT INTO doctors (clinic_id, name, specialty) SELECT 'RJ', 'Clinic doctor', 'General medicine' WHERE NOT EXISTS (SELECT 1 FROM doctors WHERE clinic_id = 'RJ')");
   if (process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD) {
     const crypto = require('crypto');
     const passwordHash = crypto.scryptSync(process.env.ADMIN_PASSWORD, process.env.ADMIN_EMAIL, 64).toString('hex');
@@ -179,12 +182,26 @@ async function initializeDatabase() {
     if (adminPhone) await query("UPDATE users SET phone = ? WHERE clinic_id = ? AND email = ?", [adminPhone, clinicId, process.env.ADMIN_EMAIL.toLowerCase()]);
   }
   if (process.env.PLATFORM_ADMIN_EMAIL && process.env.PLATFORM_ADMIN_PASSWORD) {
-    const crypto = require('crypto');
     const email = process.env.PLATFORM_ADMIN_EMAIL.toLowerCase();
     const passwordHash = crypto.scryptSync(process.env.PLATFORM_ADMIN_PASSWORD, email, 64).toString('hex');
     const platformPhone = normalizePhone(process.env.PLATFORM_ADMIN_PHONE);
     await query("INSERT INTO platform_admins (name, email, phone, password_hash) VALUES (?, ?, ?, ?) ON CONFLICT (email) DO NOTHING", [process.env.PLATFORM_ADMIN_NAME || 'Platform Owner', email, platformPhone, passwordHash]);
     if (platformPhone) await query("UPDATE platform_admins SET phone = ? WHERE email = ?", [platformPhone, email]);
+  }
+  if (process.env.RJ_STAFF_JSON) {
+    let staffAccounts;
+    try { staffAccounts = JSON.parse(process.env.RJ_STAFF_JSON); } catch (_error) { throw new Error('RJ_STAFF_JSON must be valid JSON.'); }
+    if (!Array.isArray(staffAccounts)) throw new Error('RJ_STAFF_JSON must be a JSON array.');
+    for (const account of staffAccounts) {
+      const name = String(account?.name || '').trim();
+      const email = String(account?.email || '').trim().toLowerCase();
+      const password = String(account?.password || '');
+      const role = String(account?.role || '');
+      if (!name || !email || !password || !['receptionist', 'doctor', 'admin'].includes(role)) throw new Error('Each RJ staff account needs name, email, password, and a valid role.');
+      const phone = normalizePhone(account?.phone);
+      const passwordHash = crypto.scryptSync(password, email, 64).toString('hex');
+      await query("INSERT INTO users (clinic_id, name, email, phone, password_hash, role) VALUES ('RJ', ?, ?, ?, ?, ?) ON CONFLICT (clinic_id, email) DO UPDATE SET name = EXCLUDED.name, phone = EXCLUDED.phone, role = EXCLUDED.role", [name, email, phone, passwordHash, role]);
+    }
   }
   return { prepare, query, pool };
 }

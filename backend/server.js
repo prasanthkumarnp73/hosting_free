@@ -5,7 +5,6 @@ const { Server: SocketServer } = require('socket.io');
 const cron = require('node-cron');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const bcrypt = require('bcryptjs');
 let db;
 const { generateClinicQr } = require('./utils/qr');
 const { sendWhatsAppMessage, notifyDoctor, patientConfirmation, isConfigured } = require('./utils/whatsapp');
@@ -25,17 +24,21 @@ app.use(async (_req, _res, next) => {
   try { await databaseReady; next(); } catch (error) { next(error); }
 });
 
-function resolveClinicId(req) {
+async function resolveClinicId(req) {
   const pathMatch = req.path.match(/^\/clinics\/([a-z0-9-]+)/i);
   if (pathMatch) return pathMatch[1].toLowerCase();
   const hostname = (req.hostname || '').toLowerCase();
-  if (hostname.endsWith('.onrender.com')) return process.env.CLINIC_ID || 'default';
   const hostLabel = hostname.split('.')[0];
-  return hostLabel && !['www', 'localhost', '127'].includes(hostLabel) ? hostLabel : (process.env.CLINIC_ID || 'default');
+  if (hostLabel && !['www', 'localhost', '127'].includes(hostLabel)) {
+    const clinic = await db.prepare('SELECT id FROM clinics WHERE LOWER(subdomain) = ?').get(hostLabel);
+    if (clinic) return clinic.id;
+    if (!hostname.endsWith('.onrender.com')) return hostLabel;
+  }
+  return process.env.CLINIC_ID || 'default';
 }
 
 app.use(async (req, _res, next) => {
-  req.clinicId = resolveClinicId(req);
+  req.clinicId = await resolveClinicId(req);
   await db.prepare('INSERT INTO clinics (id, name) VALUES (?, ?) ON CONFLICT (id) DO NOTHING').run(req.clinicId, req.clinicId === 'default' ? 'Prasanth Clinic' : `${req.clinicId} Clinic`);
   await db.prepare("INSERT INTO doctors (clinic_id, name, specialty) SELECT ?, 'Clinic doctor', 'General medicine' WHERE NOT EXISTS (SELECT 1 FROM doctors WHERE clinic_id = ?)").run(req.clinicId, req.clinicId);
   if (!req.path.startsWith('/api/platform')) {
@@ -255,7 +258,7 @@ app.post('/api/admin/add-clinic', authenticatePlatform, async (req, res) => {
   if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{10,}$/.test(password)) return res.status(400).json({ error: 'Admin password must be at least 10 characters with uppercase, lowercase, number, and symbol.' });
   const clinicId = subdomain;
   const adminEmail = username.includes('@') ? username : `${username}@${subdomain}.clinicflow.local`;
-  const passwordHash = await bcrypt.hash(password, 12);
+  const passwordHash = crypto.scryptSync(password, adminEmail, 64).toString('hex');
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
