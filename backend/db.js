@@ -5,6 +5,24 @@ const connectionString = process.env.DATABASE_URL;
 const databaseError = new Error('DATABASE_URL is required. Add the PostgreSQL Internal Database URL to Render Environment Variables.');
 const localDatabaseError = new Error('DATABASE_URL points to localhost. On Render, replace it with the PostgreSQL Internal Database URL from your Render database.');
 const isLocalDatabase = connectionString && /@(localhost|127\.0\.0\.1|::1)(:\d+)?\b/i.test(connectionString);
+function validateEnvironment() {
+  const required = process.env.NODE_ENV === 'production'
+    ? ['DATABASE_URL', 'JWT_SECRET', 'CLINIC_ID', 'CLINIC_URL', 'ADMIN_EMAIL', 'ADMIN_PASSWORD', 'PLATFORM_ADMIN_EMAIL', 'PLATFORM_ADMIN_PASSWORD']
+    : ['DATABASE_URL'];
+  const missing = required.filter(name => !String(process.env[name] || '').trim());
+  if (missing.length) throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+  if (process.env.NODE_ENV === 'production' && process.env.JWT_SECRET === 'clinicflow-development-secret') throw new Error('JWT_SECRET must be replaced with a long random production secret.');
+  try { new URL(process.env.CLINIC_URL); } catch (_error) { throw new Error('CLINIC_URL must be a valid URL.'); }
+  if (process.env.RJ_STAFF_JSON) {
+    let staff;
+    try { staff = JSON.parse(process.env.RJ_STAFF_JSON); } catch (_error) { throw new Error('RJ_STAFF_JSON must be valid JSON.'); }
+    if (!Array.isArray(staff) || staff.some(account => !account?.name || !account?.email || !account?.password || !['receptionist', 'doctor', 'admin'].includes(account?.role))) throw new Error('RJ_STAFF_JSON must be an array of staff accounts with name, email, password, and role.');
+  }
+  const whatsapp = ['WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID', 'WHATSAPP_VERIFY_TOKEN', 'DOCTOR_WHATSAPP_NUMBER'];
+  if (whatsapp.some(name => process.env[name]) && whatsapp.some(name => !process.env[name])) throw new Error(`Configure all WhatsApp variables: ${whatsapp.join(', ')}.`);
+  if (process.env.SMSGATE_API_URL) { try { new URL(process.env.SMSGATE_API_URL); } catch (_error) { throw new Error('SMSGATE_API_URL must be a valid URL.'); } }
+}
+validateEnvironment();
 const pool = connectionString ? new Pool({
     connectionString,
     ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false },
@@ -48,6 +66,7 @@ async function initializeDatabase() {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       subdomain TEXT UNIQUE,
+      clinic_url TEXT,
       status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
       smsgate_endpoint TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -146,6 +165,7 @@ async function initializeDatabase() {
   await query("ALTER TABLE clinics ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'");
   await query("ALTER TABLE clinics ADD COLUMN IF NOT EXISTS smsgate_endpoint TEXT");
   await query("ALTER TABLE clinics ADD COLUMN IF NOT EXISTS subdomain TEXT");
+  await query("ALTER TABLE clinics ADD COLUMN IF NOT EXISTS clinic_url TEXT");
   await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT");
   await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT");
   await query("CREATE UNIQUE INDEX IF NOT EXISTS clinics_name_lower_idx ON clinics (LOWER(name))");
@@ -162,7 +182,8 @@ async function initializeDatabase() {
       AND duplicate_subdomains.duplicate_rank > 1
   `);
   await query("UPDATE clinics SET subdomain = NULL WHERE LOWER(subdomain) = 'rj-clinic' AND id <> 'RJ'");
-  await query("INSERT INTO clinics (id, name, subdomain, status) VALUES ('RJ', 'RJ Clinic', 'rj-clinic', 'active') ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, subdomain = EXCLUDED.subdomain, status = EXCLUDED.status");
+  await query("UPDATE clinics SET clinic_url = ? WHERE id = ? AND (clinic_url IS NULL OR clinic_url = '')", [process.env.CLINIC_URL, clinicId]);
+  await query("INSERT INTO clinics (id, name, subdomain, clinic_url, status) VALUES ('RJ', 'RJ Clinic', 'rj-clinic', 'https://rj-clinic.onrender.com', 'active') ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, subdomain = EXCLUDED.subdomain, clinic_url = EXCLUDED.clinic_url, status = EXCLUDED.status");
   await query("CREATE UNIQUE INDEX IF NOT EXISTS clinics_subdomain_idx ON clinics (subdomain) WHERE subdomain IS NOT NULL");
   await query("CREATE UNIQUE INDEX IF NOT EXISTS users_clinic_username_idx ON users (clinic_id, username) WHERE username IS NOT NULL");
   await query("ALTER TABLE platform_admins ADD COLUMN IF NOT EXISTS phone TEXT");

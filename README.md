@@ -54,7 +54,7 @@ npm run test:tenant
 
 Set `JWT_SECRET` in production. To bootstrap the first clinic admin, set `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_PHONE`, and optionally `ADMIN_NAME` before the first start. Staff can then be added from `/admin.html`. Use separate clinic subdomains behind the same deployment, for example `sunrise.example.com` and `lakeside.example.com`.
 
-The RJ tenant is initialized as `clinic_id = RJ` with subdomain `rj-clinic`. Requests for `rj-clinic.onrender.com` resolve through that database mapping, so staff login and every operational query remain scoped to RJ. To bootstrap RJ staff accounts, set `RJ_STAFF_JSON` in the Render web service environment before redeploying:
+The RJ tenant is initialized as `clinic_id = RJ`, `clinic_url = https://rj-clinic.onrender.com`, with subdomain `rj-clinic`. Requests for `rj-clinic.onrender.com` resolve through that database mapping, so staff login and every operational query remain scoped to RJ. To bootstrap RJ staff accounts, set `RJ_STAFF_JSON` in the Render web service environment before redeploying:
 
 ```json
 [{"name":"RJ Admin","email":"admin@example.com","phone":"9876543210","password":"use-a-strong-password","role":"admin"},{"name":"RJ Reception","email":"reception@example.com","phone":"9876543211","password":"use-a-strong-password","role":"receptionist"},{"name":"RJ Doctor","email":"doctor@example.com","phone":"9876543212","password":"use-a-strong-password","role":"doctor"}]

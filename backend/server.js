@@ -289,7 +289,8 @@ app.post('/api/admin/add-clinic', authenticatePlatform, async (req, res) => {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
-    const clinicResult = await client.query('INSERT INTO clinics (id, name, subdomain, status) VALUES ($1, $2, $3, \'active\') RETURNING id, name, subdomain', [clinicId, clinicName, subdomain]);
+    const clinicUrl = `https://${subdomain}.onrender.com`;
+    const clinicResult = await client.query('INSERT INTO clinics (id, name, subdomain, clinic_url, status) VALUES ($1, $2, $3, $4, \'active\') RETURNING id, name, subdomain, clinic_url AS "clinicUrl"', [clinicId, clinicName, subdomain, clinicUrl]);
     await client.query('INSERT INTO users (clinic_id, name, username, email, password_hash, role) VALUES ($1, $2, $3, $4, $5, \'admin\')', [clinicId, `${clinicName} Admin`, username, adminEmail, passwordHash]);
     await client.query("INSERT INTO doctors (clinic_id, name, specialty) VALUES ($1, 'Clinic doctor', 'General medicine')", [clinicId]);
     await client.query('COMMIT');
@@ -303,7 +304,7 @@ app.post('/api/admin/add-clinic', authenticatePlatform, async (req, res) => {
 });
 app.get('/api/platform/clinics', authenticatePlatform, async (_req, res) => {
   const clinics = await db.prepare(`
-    SELECT c.id, c.name, c.status, c.smsgate_endpoint AS "smsgateEndpoint", c.created_at AS "createdAt",
+    SELECT c.id, c.name, c.subdomain, c.clinic_url AS "clinicUrl", c.status, c.smsgate_endpoint AS "smsgateEndpoint", c.created_at AS "createdAt",
       (SELECT COUNT(*)::int FROM users u WHERE u.clinic_id = c.id) AS "staffCount",
       (SELECT COUNT(*)::int FROM patients p WHERE p.clinic_id = c.id) AS "patientCount"
     FROM clinics c ORDER BY c.created_at DESC
